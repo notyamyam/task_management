@@ -16,6 +16,18 @@ def migrate_existing_schema():
             user_columns = {column["name"] for column in inspector.get_columns("users")}
             if "username" in user_columns and "email" not in user_columns:
                 connection.execute(text("ALTER TABLE users RENAME COLUMN username TO email"))
+            if "google_sub" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN google_sub VARCHAR"))
+            connection.execute(
+                text("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")
+            )
+
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_google_sub "
+                    "ON users (google_sub) WHERE google_sub IS NOT NULL"
+                )
+            )
 
         if "tasks" in tables:
             task_columns = {column["name"] for column in inspector.get_columns("tasks")}

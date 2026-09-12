@@ -30,3 +30,6 @@ class UserPasswordUpdate(BaseModel):
         if len(value) > 128:
             raise ValueError("Password must be 128 characters or fewer")
         return value
+
+class GoogleLogin(BaseModel):
+    credential: str

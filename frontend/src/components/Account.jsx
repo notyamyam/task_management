@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
+import { BadgeCheck, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
@@ -19,6 +19,8 @@ const Account = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswords, setShowPasswords] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [googleLinked, setGoogleLinked] = useState(false);
 
   const loadProfile = async () => {
     setIsLoading(true);
@@ -26,6 +28,8 @@ const Account = () => {
     try {
       const response = await instance.get(ENDPOINTS.GET_PROFILE());
       setEmail(response.data.email);
+      setHasPassword(response.data.has_password);
+      setGoogleLinked(response.data.google_linked);
     } catch (error) {
       setLoadError(getErrorMessage(error, "We couldn't load your account."));
     } finally {
@@ -39,7 +43,11 @@ const Account = () => {
     instance
       .get(ENDPOINTS.GET_PROFILE())
       .then((response) => {
-        if (isCurrent) setEmail(response.data.email);
+        if (isCurrent) {
+          setEmail(response.data.email);
+          setHasPassword(response.data.has_password);
+          setGoogleLinked(response.data.google_linked);
+        }
       })
       .catch((error) => {
         if (isCurrent) setLoadError(getErrorMessage(error, "We couldn't load your account."));
@@ -119,33 +127,37 @@ const Account = () => {
                   <p className="text-sm font-semibold text-slate-900">Email</p>
                   <p className="mt-1 text-xs text-slate-500">Your email cannot be changed.</p>
                 </div>
-                <div className="relative">
-                  <UserRound aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
-                  <input type="email" value={email} readOnly aria-label="Email" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
+                <div>
+                  <div className="relative">
+                    <UserRound aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
+                    <input type="email" value={email} readOnly aria-label="Email" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
+                  </div>
+                  {googleLinked ? <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><BadgeCheck aria-hidden="true" className="size-4" />Google account connected</p> : null}
                 </div>
               </div>
 
-              <div className="py-4">
-                <div className="grid gap-3 sm:grid-cols-[150px_1fr] sm:items-center">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Password</p>
-                    <p className="mt-1 text-xs text-slate-500">Hidden for your security.</p>
-                  </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <div className="relative min-w-0 flex-1">
-                      <LockKeyhole aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
-                      <input type="password" value="password-hidden" readOnly aria-label="Password is hidden" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
+              {hasPassword ? (
+                <div className="py-4">
+                  <div className="grid gap-3 sm:grid-cols-[150px_1fr] sm:items-center">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Password</p>
+                      <p className="mt-1 text-xs text-slate-500">Hidden for your security.</p>
                     </div>
-                    {!isEditing ? (
-                      <button type="button" onClick={() => setIsEditing(true)} className="min-h-11 cursor-pointer rounded-lg bg-[#173b35] px-4 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800">
-                        Edit password
-                      </button>
-                    ) : null}
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <div className="relative min-w-0 flex-1">
+                        <LockKeyhole aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
+                        <input type="password" value="password-hidden" readOnly aria-label="Password is hidden" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
+                      </div>
+                      {!isEditing ? (
+                        <button type="button" onClick={() => setIsEditing(true)} className="min-h-11 cursor-pointer rounded-lg bg-[#173b35] px-4 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800">
+                          Edit password
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
 
-                {isEditing ? (
-                  <form onSubmit={updatePassword} className="mt-4 border-t border-slate-200 pt-4 sm:ml-[150px]">
+                  {isEditing ? (
+                    <form onSubmit={updatePassword} className="mt-4 border-t border-slate-200 pt-4 sm:ml-[150px]">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <h3 className="flex items-center gap-2 font-semibold"><KeyRound aria-hidden="true" className="size-5 text-emerald-800" />Change password</h3>
                       <button type="button" onClick={() => setShowPasswords((current) => !current)} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800">
@@ -178,9 +190,21 @@ const Account = () => {
                         {isSaving ? "Saving..." : "Save password"}
                       </button>
                     </div>
-                  </form>
-                ) : null}
-              </div>
+                    </form>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="grid gap-3 py-4 sm:grid-cols-[150px_1fr] sm:items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Sign-in method</p>
+                    <p className="mt-1 text-xs text-slate-500">Your account has no password.</p>
+                  </div>
+                  <div className="flex min-h-11 items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-900">
+                    <BadgeCheck aria-hidden="true" className="size-5 flex-none text-emerald-700" />
+                    {googleLinked ? "Connected with Google" : "Password sign-in is unavailable"}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}

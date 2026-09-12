@@ -10,6 +10,7 @@ export const ENDPOINTS = {
   GET_TASKS: () => "/tasks/get-tasks",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,
   DELETE_TASK: (id) => `/tasks/delete-task?id=${id}`,
+  GOOGLE_LOGIN: () => "/users/google",
 };
 
 export const instance = axios.create({

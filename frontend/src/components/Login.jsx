@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, LockKeyhole, Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { ENDPOINTS, instance } from "./api";
+import { GoogleLogin } from "@react-oauth/google";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -64,7 +65,9 @@ const Login = () => {
           <span className="grid size-9 place-items-center rounded-lg bg-[#dce993] text-sm font-black text-[#173b35]">
             C
           </span>
-          <span className="text-sm font-bold tracking-[0.16em] uppercase">Corner</span>
+          <span className="text-sm font-bold tracking-[0.16em] uppercase">
+            Corner
+          </span>
         </div>
 
         <div className="max-w-lg">
@@ -75,7 +78,8 @@ const Login = () => {
             Keep your tasks simple and your focus clear.
           </h1>
           <p className="mt-4 max-w-md text-sm leading-6 text-emerald-50/70">
-            Capture what needs doing, stay organized, and move through your day with less noise.
+            Capture what needs doing, stay organized, and move through your day
+            with less noise.
           </p>
         </div>
 
@@ -88,8 +92,12 @@ const Login = () => {
       <section className="flex min-h-svh items-center justify-center px-4 py-5 sm:px-8 lg:px-12">
         <div className="w-full max-w-[400px]">
           <div className="mb-7 flex items-center gap-2.5 lg:hidden">
-            <span className="grid size-9 place-items-center rounded-lg bg-[#173b35] text-sm font-black text-[#dce993]">C</span>
-            <span className="text-sm font-bold tracking-[0.16em] text-[#173b35] uppercase">Corner</span>
+            <span className="grid size-9 place-items-center rounded-lg bg-[#173b35] text-sm font-black text-[#dce993]">
+              C
+            </span>
+            <span className="text-sm font-bold tracking-[0.16em] text-[#173b35] uppercase">
+              Corner
+            </span>
           </div>
 
           <header className="mb-5">
@@ -106,28 +114,55 @@ const Login = () => {
             </p>
           </header>
 
-          <button
-            type="button"
-            disabled
-            aria-describedby="google-availability"
-            className="flex h-11 w-full cursor-not-allowed items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-500 opacity-75"
-          >
-            <span aria-hidden="true" className="text-base font-bold text-[#4285f4]">G</span>
-            Continue with Google
-            <span id="google-availability" className="ml-auto text-xs font-medium text-slate-400">Coming soon</span>
-          </button>
+          <GoogleLogin
+            onSuccess={async ({ credential }) => {
+              if (!credential) {
+                setError("Google did not return a credential.");
+                return;
+              }
+
+              setError("");
+
+              try {
+                const response = await instance.post(ENDPOINTS.GOOGLE_LOGIN(), {
+                  credential,
+                });
+
+                localStorage.setItem("token", response.data.token);
+                navigate("/tasks");
+              } catch (error) {
+                setError(
+                  error.response?.data?.detail ??
+                    "We couldn't sign you in with Google.",
+                );
+              }
+            }}
+            onError={() => {
+              setError("Google sign-in was cancelled or failed.");
+            }}
+          />
 
           <div className="my-4 flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-slate-300" />
-            <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">or use your details</span>
+            <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+              or use your details
+            </span>
             <span className="h-px flex-1 bg-slate-300" />
           </div>
 
           <form onSubmit={handleOnSubmit} className="space-y-3.5">
             <div>
-              <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-slate-800">Email address</label>
+              <label
+                htmlFor="email"
+                className="mb-1.5 block text-sm font-semibold text-slate-800"
+              >
+                Email address
+              </label>
               <div className="relative">
-                <Mail aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
+                <Mail
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   id="email"
                   name="email"
@@ -143,26 +178,46 @@ const Login = () => {
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-1.5 block text-sm font-semibold text-slate-800">Password</label>
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-sm font-semibold text-slate-800"
+              >
+                Password
+              </label>
               <div className="relative">
-                <LockKeyhole aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
+                <LockKeyhole
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400"
+                />
                 <input
                   id="password"
                   name="password"
                   type="password"
-                  autoComplete={isRegistering ? "new-password" : "current-password"}
+                  autoComplete={
+                    isRegistering ? "new-password" : "current-password"
+                  }
                   required
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder={isRegistering ? "Create a password" : "Enter your password"}
+                  placeholder={
+                    isRegistering ? "Create a password" : "Enter your password"
+                  }
                   className="h-11 w-full rounded-lg border border-slate-300 bg-white pr-4 pl-11 text-sm text-slate-950 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
                 />
               </div>
             </div>
 
             <div aria-live="polite" className="min-h-5">
-              {error ? <p role="alert" className="text-sm font-medium text-red-700">{error}</p> : null}
-              {message ? <p className="text-sm font-medium text-emerald-800">{message}</p> : null}
+              {error ? (
+                <p role="alert" className="text-sm font-medium text-red-700">
+                  {error}
+                </p>
+              ) : null}
+              {message ? (
+                <p className="text-sm font-medium text-emerald-800">
+                  {message}
+                </p>
+              ) : null}
             </div>
 
             <button
@@ -171,8 +226,12 @@ const Login = () => {
               className="flex h-11 w-full cursor-pointer items-center justify-center rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white shadow-sm hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSubmitting
-                ? isRegistering ? "Creating account..." : "Signing in..."
-                : isRegistering ? "Create account" : "Sign in"}
+                ? isRegistering
+                  ? "Creating account..."
+                  : "Signing in..."
+                : isRegistering
+                  ? "Create account"
+                  : "Sign in"}
             </button>
           </form>
 
