@@ -10,7 +10,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/me")
 def get_current_user(current_user = Depends(auth.get_current_user)):
-    return {"id": current_user.id, "username": current_user.email}
+    return {"id": current_user.id, "email": current_user.email}
 
 
 @router.put("/me/password")

@@ -6,6 +6,5 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    # Keep the existing database column name so current installations do not need a migration.
-    email = Column("username", String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
     password = Column(String, nullable=False)
