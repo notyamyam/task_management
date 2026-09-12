@@ -17,7 +17,7 @@ From the repository root, run:
 
 ```powershell
 cd frontend
-npm run dev
+npm ci
 ```
 
 ### Backend
