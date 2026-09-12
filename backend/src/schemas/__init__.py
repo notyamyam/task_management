@@ -1,2 +1,2 @@
 from .task import TaskCreate
-from .user import UsersCreate
+from .user import UserPasswordUpdate, UsersCreate

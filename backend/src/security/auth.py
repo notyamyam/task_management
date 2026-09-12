@@ -26,16 +26,16 @@ def create_access_token(data: dict):
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=settings.algorithm)
-        username: str = payload.get("sub")
-        if username is None:
+        email: str = payload.get("sub")
+        if email is None:
             raise JWTError
-        return username
+        return email
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 def get_current_user(token = Depends(oauth2_scheme), db = Depends(get_db)):
-    username = verify_token(token)
-    user = db.query(User).filter(User.username == username).first()
+    email = verify_token(token)
+    user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

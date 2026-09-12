@@ -3,6 +3,9 @@ import { toast } from "react-toastify";
 
 export const ENDPOINTS = {
   LOGIN: () => "/users/login",
+  REGISTER: () => "/users/register",
+  GET_PROFILE: () => "/users/me",
+  UPDATE_PASSWORD: () => "/users/me/password",
   CREATE_TASK: () => "/tasks/create-task",
   GET_TASKS: () => "/tasks/get-tasks",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,
@@ -27,7 +30,7 @@ instance.interceptors.request.use(
 instance.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && localStorage.getItem("token")) {
       localStorage.removeItem("token");
       toast.error("Invalid Credentials.");
       window.location.href = "/";
