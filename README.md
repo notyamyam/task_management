@@ -39,9 +39,20 @@ DATABASE_URL=your_database_connection_url
 SECRET_KEY=your_jwt_secret_key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+PASSWORD_RESET_OTP_SECRET=use_a_separate_random_secret
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your_smtp_username
+SMTP_PASSWORD=your_smtp_password
+SMTP_FROM_EMAIL=no-reply@example.com
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
 ```
 
 `ACCESS_TOKEN_EXPIRE_MINUTES` is optional and defaults to `30`.
+`PASSWORD_RESET_OTP_SECRET` should be a separate random secret; when omitted,
+`SECRET_KEY` is used. Configure either SMTP TLS (typically port `587`) or SMTP
+SSL (typically port `465`) so password reset codes can be delivered.
 
 ## Start the Frontend
 

@@ -3,6 +3,7 @@ import Navbar from "./components/Navbar";
 import Login from "./components/Login";
 import Task from "./components/Task";
 import Account from "./components/Account";
+import ForgotPassword from "./components/ForgotPassword";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { ENDPOINTS, instance } from "./components/api";
@@ -86,6 +87,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/tasks" element={<Task />} />
             <Route path="/account" element={<Account />} />

@@ -22,6 +22,29 @@ def migrate_existing_schema():
                 connection.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100)"))
             if "last_name" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100)"))
+            if "auth_version" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN auth_version INTEGER NOT NULL DEFAULT 0"
+                ))
+            if "password_reset_otp_hash" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN password_reset_otp_hash VARCHAR(64)"
+                ))
+            if "password_reset_otp_expires_at" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN password_reset_otp_expires_at "
+                    "TIMESTAMP WITH TIME ZONE"
+                ))
+            if "password_reset_requested_at" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN password_reset_requested_at "
+                    "TIMESTAMP WITH TIME ZONE"
+                ))
+            if "password_reset_attempts" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN password_reset_attempts INTEGER "
+                    "NOT NULL DEFAULT 0"
+                ))
             connection.execute(
                 text("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")
             )

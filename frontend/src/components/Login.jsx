@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, LockKeyhole, Mail } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ENDPOINTS, instance } from "./api";
 import { GoogleLogin } from "@react-oauth/google";
 
@@ -175,12 +175,22 @@ const Login = () => {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="mb-1.5 block text-sm font-semibold text-slate-800"
-              >
-                Password
-              </label>
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-semibold text-slate-800"
+                >
+                  Password
+                </label>
+                {!isRegistering ? (
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs font-bold text-emerald-800 underline decoration-emerald-800/30 underline-offset-4 hover:text-emerald-950 focus-visible:rounded-sm focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
+                  >
+                    Forgot password?
+                  </Link>
+                ) : null}
+              </div>
               <div className="relative">
                 <LockKeyhole
                   aria-hidden="true"

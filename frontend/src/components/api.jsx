@@ -7,6 +7,8 @@ export const ENDPOINTS = {
   GET_PROFILE: () => "/users/me",
   UPDATE_PROFILE: () => "/users/me",
   UPDATE_PASSWORD: () => "/users/me/password",
+  REQUEST_PASSWORD_RESET: () => "/users/password-reset/request",
+  CONFIRM_PASSWORD_RESET: () => "/users/password-reset/confirm",
   CREATE_TASK: () => "/tasks/create-task",
   GET_TASKS: () => "/tasks/get-tasks",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,

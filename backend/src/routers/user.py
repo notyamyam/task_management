@@ -1,10 +1,20 @@
 import logging
+import secrets
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import GoogleLogin, UserPasswordUpdate, UserProfileUpdate, UsersCreate
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from ..schemas import (
+    GoogleLogin,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    UserPasswordUpdate,
+    UserProfileUpdate,
+    UsersCreate,
+)
 from ..database import get_db
 from ..models import User
 from ..security import auth
+from ..services.email import is_smtp_configured, send_password_reset_otp
 from fastapi.security import OAuth2PasswordRequestForm
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
@@ -14,6 +24,10 @@ from ..security.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+PASSWORD_RESET_RESPONSE = {
+    "message": "If an account exists for that email, a reset code has been sent."
+}
 
 
 def normalize_google_name(value):
@@ -33,6 +47,21 @@ def serialize_profile(user: User):
         "has_password": user.password is not None,
         "google_linked": user.google_sub is not None,
     }
+
+
+def clear_password_reset(user: User, preserve_requested_at=False):
+    user.password_reset_otp_hash = None
+    user.password_reset_otp_expires_at = None
+    if not preserve_requested_at:
+        user.password_reset_requested_at = None
+    user.password_reset_attempts = 0
+
+
+def deliver_password_reset_otp(email: str, otp: str):
+    try:
+        send_password_reset_otp(email, otp)
+    except Exception:
+        logger.exception("Unable to send password reset email")
 
 
 @router.get("/me")
@@ -73,9 +102,90 @@ def update_password(
     return {"message": "Password updated successfully"}
 
 @router.get("/")
-def get_users(db = Depends(get_db)):
+def get_users(db = Depends(get_db), current_user = Depends(auth.get_current_user)):
     users = db.query(User).all()
-    return users
+    return [serialize_profile(user) for user in users]
+
+
+@router.post("/password-reset/request", status_code=202)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db = Depends(get_db),
+):
+    if not is_smtp_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset email is temporarily unavailable.",
+        )
+
+    user = (
+        db.query(User)
+        .filter(User.email == payload.email)
+        .with_for_update()
+        .first()
+    )
+    if not user:
+        return PASSWORD_RESET_RESPONSE
+
+    now = datetime.now(timezone.utc)
+    if (
+        user.password_reset_requested_at
+        and user.password_reset_requested_at > now - timedelta(seconds=60)
+    ):
+        return PASSWORD_RESET_RESPONSE
+
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    otp_hash = auth.hash_password_reset_otp(user.id, otp)
+    user.password_reset_otp_hash = otp_hash
+    user.password_reset_otp_expires_at = now + timedelta(minutes=10)
+    user.password_reset_requested_at = now
+    user.password_reset_attempts = 0
+    db.commit()
+    background_tasks.add_task(deliver_password_reset_otp, user.email, otp)
+
+    return PASSWORD_RESET_RESPONSE
+
+
+@router.post("/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetConfirm, db = Depends(get_db)):
+    user = (
+        db.query(User)
+        .filter(User.email == payload.email)
+        .with_for_update()
+        .first()
+    )
+    invalid_code = HTTPException(status_code=400, detail="Invalid or expired OTP")
+
+    if not user or not user.password_reset_otp_hash:
+        raise invalid_code
+
+    now = datetime.now(timezone.utc)
+    if (
+        not user.password_reset_otp_expires_at
+        or user.password_reset_otp_expires_at <= now
+        or user.password_reset_attempts >= 5
+    ):
+        clear_password_reset(user)
+        db.commit()
+        raise invalid_code
+
+    if not auth.verify_password_reset_otp(
+        user.id,
+        payload.otp,
+        user.password_reset_otp_hash,
+    ):
+        user.password_reset_attempts += 1
+        if user.password_reset_attempts >= 5:
+            clear_password_reset(user, preserve_requested_at=True)
+        db.commit()
+        raise invalid_code
+
+    user.password = auth.hash_password(payload.new_password)
+    user.auth_version += 1
+    clear_password_reset(user)
+    db.commit()
+    return {"message": "Password reset successfully. You can now sign in."}
 
 #CREATE / Register an account.
 @router.post("/register")
@@ -87,7 +197,9 @@ def create_user(user: UsersCreate, db = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    access_token = auth.create_access_token(data={"sub": new_user.email})
+    access_token = auth.create_access_token(
+        data={"sub": new_user.email, "auth_version": new_user.auth_version}
+    )
     return {
         "id": new_user.id,
         "email": new_user.email,
@@ -103,7 +215,9 @@ def login_user(user: UsersCreate, db = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
     if not auth.verify_password(user.password, existing_user.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
-    access_token = auth.create_access_token(data={"sub": existing_user.email})
+    access_token = auth.create_access_token(
+        data={"sub": existing_user.email, "auth_version": existing_user.auth_version}
+    )
     return {
         "token": access_token,
         "token_type": "bearer",
@@ -118,7 +232,9 @@ def get_token(form_data:OAuth2PasswordRequestForm = Depends(), db = Depends(get_
         raise HTTPException(status_code=401, detail="Invalid Credentials")
     if not auth.verify_password(form_data.password, user_exist.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
-    access_token = auth.create_access_token(data={"sub": user_exist.email})
+    access_token = auth.create_access_token(
+        data={"sub": user_exist.email, "auth_version": user_exist.auth_version}
+    )
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -177,7 +293,9 @@ def google_login(payload: GoogleLogin, db=Depends(get_db)):
         db.commit()
         db.refresh(user)
 
-    access_token = auth.create_access_token({"sub": user.email})
+    access_token = auth.create_access_token(
+        {"sub": user.email, "auth_version": user.auth_version}
+    )
     return {
         "token": access_token,
         "token_type": "bearer",
