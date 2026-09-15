@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { BadgeCheck, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, UserRound } from "lucide-react";
+import { useState } from "react";
+import { BadgeCheck, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Save, UserRound } from "lucide-react";
 import { toast } from "react-toastify";
+import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
 
 import { ENDPOINTS, instance } from "./api";
 
@@ -10,56 +11,38 @@ const getErrorMessage = (error, fallback) => {
 };
 
 const Account = () => {
-  const [email, setEmail] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPasswords, setShowPasswords] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasPassword, setHasPassword] = useState(false);
-  const [googleLinked, setGoogleLinked] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const { profile, isProfileLoading, profileError, loadProfile, onProfileChange } = useOutletContext();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const loadProfile = async () => {
-    setIsLoading(true);
-    setLoadError("");
+  const updateProfile = async (event) => {
+    event.preventDefault();
+    setIsProfileSaving(true);
+    const formData = new FormData(event.currentTarget);
+
     try {
-      const response = await instance.get(ENDPOINTS.GET_PROFILE());
-      setEmail(response.data.email);
-      setHasPassword(response.data.has_password);
-      setGoogleLinked(response.data.google_linked);
+      const response = await instance.put(ENDPOINTS.UPDATE_PROFILE(), {
+        first_name: formData.get("first_name"),
+        last_name: formData.get("last_name"),
+      });
+      onProfileChange(response.data);
+      toast.success("Account details updated.");
+      if (location.state?.completeProfile || !profile?.profile_complete) {
+        navigate("/tasks", { replace: true });
+      }
     } catch (error) {
-      setLoadError(getErrorMessage(error, "We couldn't load your account."));
+      toast.error(getErrorMessage(error, "Couldn't update your account details."));
     } finally {
-      setIsLoading(false);
+      setIsProfileSaving(false);
     }
   };
-
-  useEffect(() => {
-    let isCurrent = true;
-
-    instance
-      .get(ENDPOINTS.GET_PROFILE())
-      .then((response) => {
-        if (isCurrent) {
-          setEmail(response.data.email);
-          setHasPassword(response.data.has_password);
-          setGoogleLinked(response.data.google_linked);
-        }
-      })
-      .catch((error) => {
-        if (isCurrent) setLoadError(getErrorMessage(error, "We couldn't load your account."));
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, []);
 
   const resetPasswordForm = () => {
     setCurrentPassword("");
@@ -100,14 +83,21 @@ const Account = () => {
           <p className="mt-1 text-sm text-slate-600">Review your sign-in details and keep your password secure.</p>
         </header>
 
-        {isLoading ? (
+        {location.state?.completeProfile && !profile?.profile_complete ? (
+          <div className="mt-4 border-l-4 border-[#dce993] bg-[#173b35] px-4 py-3 text-white" role="status">
+            <p className="text-sm font-bold">Complete your profile to continue</p>
+            <p className="mt-0.5 text-xs text-emerald-50/75">Add your first and last name so your account can be identified.</p>
+          </div>
+        ) : null}
+
+        {isProfileLoading ? (
           <div className="flex min-h-40 items-center justify-center gap-3 text-sm text-slate-600" role="status">
             <LoaderCircle aria-hidden="true" className="size-5 animate-spin text-emerald-800" />
             Loading account...
           </div>
-        ) : loadError ? (
+        ) : profileError ? (
           <div className="flex min-h-40 flex-col items-center justify-center text-center">
-            <p className="font-semibold">{loadError}</p>
+            <p className="font-semibold">{profileError}</p>
             <button type="button" onClick={loadProfile} className="mt-4 min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800">
               Try again
             </button>
@@ -122,6 +112,33 @@ const Account = () => {
             </div>
 
             <div className="divide-y divide-slate-200 px-4 sm:px-5">
+              <form key={`${profile.id}-${profile.first_name}-${profile.last_name}`} onSubmit={updateProfile} className="py-4">
+                <div className="grid gap-3 sm:grid-cols-[150px_1fr]">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Profile name</p>
+                    <p className="mt-1 text-xs text-slate-500">Used for your account avatar.</p>
+                  </div>
+                  <div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label htmlFor="first-name" className="mb-1.5 block text-sm font-semibold text-slate-800">First name</label>
+                        <input id="first-name" name="first_name" type="text" autoComplete="given-name" required maxLength={100} defaultValue={profile.first_name ?? ""} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
+                      </div>
+                      <div>
+                        <label htmlFor="last-name" className="mb-1.5 block text-sm font-semibold text-slate-800">Last name</label>
+                        <input id="last-name" name="last_name" type="text" autoComplete="family-name" required maxLength={100} defaultValue={profile.last_name ?? ""} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
+                      </div>
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button type="submit" disabled={isProfileSaving} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                        {isProfileSaving ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}
+                        {isProfileSaving ? "Saving..." : "Save profile"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </form>
+
               <div className="grid gap-2 py-4 sm:grid-cols-[150px_1fr] sm:items-center">
                 <div>
                   <p className="text-sm font-semibold text-slate-900">Email</p>
@@ -130,13 +147,13 @@ const Account = () => {
                 <div>
                   <div className="relative">
                     <UserRound aria-hidden="true" className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-slate-400" />
-                    <input type="email" value={email} readOnly aria-label="Email" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
+                    <input type="email" value={profile.email} readOnly aria-label="Email" className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 pr-4 pl-11 text-sm text-slate-600 outline-none" />
                   </div>
-                  {googleLinked ? <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><BadgeCheck aria-hidden="true" className="size-4" />Google account connected</p> : null}
+                  {profile.google_linked ? <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><BadgeCheck aria-hidden="true" className="size-4" />Google account connected</p> : null}
                 </div>
               </div>
 
-              {hasPassword ? (
+              {profile.has_password ? (
                 <div className="py-4">
                   <div className="grid gap-3 sm:grid-cols-[150px_1fr] sm:items-center">
                     <div>
@@ -201,7 +218,7 @@ const Account = () => {
                   </div>
                   <div className="flex min-h-11 items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-900">
                     <BadgeCheck aria-hidden="true" className="size-5 flex-none text-emerald-700" />
-                    {googleLinked ? "Connected with Google" : "Password sign-in is unavailable"}
+                    {profile.google_linked ? "Connected with Google" : "Password sign-in is unavailable"}
                   </div>
                 </div>
               )}

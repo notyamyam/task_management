@@ -28,15 +28,10 @@ const Login = () => {
         },
       );
 
-      if (isRegistering) {
-        setIsRegistering(false);
-        setPassword("");
-        setMessage("Account created. You can now sign in.");
-        return;
-      }
-
       localStorage.setItem("token", response.data.token);
-      navigate("/tasks");
+      navigate(response.data.profile_complete ? "/tasks" : "/account", {
+        state: { completeProfile: true },
+      });
     } catch (requestError) {
       const detail = requestError.response?.data?.detail;
       setError(
@@ -129,7 +124,9 @@ const Login = () => {
                 });
 
                 localStorage.setItem("token", response.data.token);
-                navigate("/tasks");
+                navigate(response.data.profile_complete ? "/tasks" : "/account", {
+                  state: { completeProfile: true },
+                });
               } catch (error) {
                 setError(
                   error.response?.data?.detail ??

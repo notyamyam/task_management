@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from ..schemas import GoogleLogin, UserPasswordUpdate, UsersCreate
+from ..schemas import GoogleLogin, UserPasswordUpdate, UserProfileUpdate, UsersCreate
 from ..database import get_db
 from ..models import User
 from ..security import auth
@@ -16,14 +16,41 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+def normalize_google_name(value):
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    return name[:100] or None
+
+
+def serialize_profile(user: User):
+    return {
+        "id": user.id,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "profile_complete": bool(user.first_name and user.last_name),
+        "has_password": user.password is not None,
+        "google_linked": user.google_sub is not None,
+    }
+
+
 @router.get("/me")
 def get_current_user(current_user = Depends(auth.get_current_user)):
-    return {
-        "id": current_user.id,
-        "email": current_user.email,
-        "has_password" : current_user.password is not None,
-        "google_linked" : current_user.google_sub is not None,
-    }
+    return serialize_profile(current_user)
+
+
+@router.put("/me")
+def update_profile(
+    profile: UserProfileUpdate,
+    db = Depends(get_db),
+    current_user = Depends(auth.get_current_user),
+):
+    current_user.first_name = profile.first_name
+    current_user.last_name = profile.last_name
+    db.commit()
+    db.refresh(current_user)
+    return serialize_profile(current_user)
 
 
 @router.put("/me/password")
@@ -55,12 +82,19 @@ def get_users(db = Depends(get_db)):
 def create_user(user: UsersCreate, db = Depends(get_db)):
     exist_user = db.query(User).filter(User.email == user.email).first()
     if exist_user:
-        raise HTTPException(status_code=400, detail="An account with this email already exists")
+        raise HTTPException(status_code=400, detail="Unable to create account with the provided information.")
     new_user = User(email=user.email, password=auth.hash_password(user.password))
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return {"id": new_user.id, "email": new_user.email}
+    access_token = auth.create_access_token(data={"sub": new_user.email})
+    return {
+        "id": new_user.id,
+        "email": new_user.email,
+        "token": access_token,
+        "token_type": "bearer",
+        "profile_complete": False,
+    }
 
 @router.post("/login")
 def login_user(user: UsersCreate, db = Depends(get_db)):
@@ -70,7 +104,11 @@ def login_user(user: UsersCreate, db = Depends(get_db)):
     if not auth.verify_password(user.password, existing_user.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
     access_token = auth.create_access_token(data={"sub": existing_user.email})
-    return {"token": access_token, "token_type": "bearer"}
+    return {
+        "token": access_token,
+        "token_type": "bearer",
+        "profile_complete": bool(existing_user.first_name and existing_user.last_name),
+    }
 
 @router.post("/token")
 def get_token(form_data:OAuth2PasswordRequestForm = Depends(), db = Depends(get_db)):
@@ -81,7 +119,11 @@ def get_token(form_data:OAuth2PasswordRequestForm = Depends(), db = Depends(get_
     if not auth.verify_password(form_data.password, user_exist.password):
         raise HTTPException(status_code=401, detail="Invalid Credentials")
     access_token = auth.create_access_token(data={"sub": user_exist.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "profile_complete": bool(user_exist.first_name and user_exist.last_name),
+    }
 
 @router.post("/google")
 def google_login(payload: GoogleLogin, db=Depends(get_db)):
@@ -127,6 +169,8 @@ def google_login(payload: GoogleLogin, db=Depends(get_db)):
                 email=email,
                 password=None,
                 google_sub=google_sub,
+                first_name=normalize_google_name(claims.get("given_name")),
+                last_name=normalize_google_name(claims.get("family_name")),
             )
             db.add(user)
 
@@ -134,4 +178,8 @@ def google_login(payload: GoogleLogin, db=Depends(get_db)):
         db.refresh(user)
 
     access_token = auth.create_access_token({"sub": user.email})
-    return {"token": access_token, "token_type": "bearer"}
+    return {
+        "token": access_token,
+        "token_type": "bearer",
+        "profile_complete": bool(user.first_name and user.last_name),
+    }

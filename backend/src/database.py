@@ -18,6 +18,10 @@ def migrate_existing_schema():
                 connection.execute(text("ALTER TABLE users RENAME COLUMN username TO email"))
             if "google_sub" not in user_columns:
                 connection.execute(text("ALTER TABLE users ADD COLUMN google_sub VARCHAR"))
+            if "first_name" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN first_name VARCHAR(100)"))
+            if "last_name" not in user_columns:
+                connection.execute(text("ALTER TABLE users ADD COLUMN last_name VARCHAR(100)"))
             connection.execute(
                 text("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")
             )

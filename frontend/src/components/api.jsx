@@ -5,6 +5,7 @@ export const ENDPOINTS = {
   LOGIN: () => "/users/login",
   REGISTER: () => "/users/register",
   GET_PROFILE: () => "/users/me",
+  UPDATE_PROFILE: () => "/users/me",
   UPDATE_PASSWORD: () => "/users/me/password",
   CREATE_TASK: () => "/tasks/create-task",
   GET_TASKS: () => "/tasks/get-tasks",

@@ -6,9 +6,16 @@ from ..security import auth
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
+
+def get_current_complete_user(current_user = Depends(auth.get_current_user)):
+    if not current_user.first_name or not current_user.last_name:
+        raise HTTPException(status_code=403, detail="Complete your profile before managing tasks")
+    return current_user
+
+
 #CREATE
 @router.post("/create-task")
-def create_task(task: TaskCreate, db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def create_task(task: TaskCreate, db = Depends(get_db), current_user = Depends(get_current_complete_user)):
     new_task = Task(**task.model_dump(), user_id=current_user.id) 
     db.add(new_task)
     db.commit()
@@ -17,7 +24,7 @@ def create_task(task: TaskCreate, db = Depends(get_db), current_user = Depends(a
 
 #READ
 @router.get("/get-tasks")
-def get_tasks(db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def get_tasks(db = Depends(get_db), current_user = Depends(get_current_complete_user)):
     try:
         task = db.query(Task).filter(Task.user_id == current_user.id).order_by(Task.title.asc()).all()
         return task
@@ -26,7 +33,7 @@ def get_tasks(db = Depends(get_db), current_user = Depends(auth.get_current_user
 
 #READ single task
 @router.get("/get-task/{task_id}")
-def get_task(task_id: int, db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def get_task(task_id: int, db = Depends(get_db), current_user = Depends(get_current_complete_user)):
     task = db.query(Task).filter(Task.id == task_id).first()
     if task.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You are not authorized to access this task")
@@ -36,7 +43,7 @@ def get_task(task_id: int, db = Depends(get_db), current_user = Depends(auth.get
 
 #UPDATE
 @router.put("/update-task")
-def update_task(id: int, task: TaskCreate, db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def update_task(id: int, task: TaskCreate, db = Depends(get_db), current_user = Depends(get_current_complete_user)):
     existing_task = db.query(Task).filter(Task.id == id).first()
 
     if not existing_task:
@@ -54,7 +61,7 @@ def update_task(id: int, task: TaskCreate, db = Depends(get_db), current_user = 
 
 #DELETE
 @router.delete("/delete-task")
-def delete_task(id: int, db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def delete_task(id: int, db = Depends(get_db), current_user = Depends(get_current_complete_user)):
     task = db.query(Task).filter(Task.id == id).first()
 
     if task.user_id != current_user.id:

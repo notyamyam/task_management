@@ -1,2 +1,2 @@
 from .task import TaskCreate
-from .user import GoogleLogin, UserPasswordUpdate, UsersCreate
+from .user import GoogleLogin, UserPasswordUpdate, UserProfileUpdate, UsersCreate

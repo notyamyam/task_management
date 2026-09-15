@@ -31,5 +31,21 @@ class UserPasswordUpdate(BaseModel):
             raise ValueError("Password must be 128 characters or fewer")
         return value
 
+
+class UserProfileUpdate(BaseModel):
+    first_name: str
+    last_name: str
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        name = value.strip()
+        if not name:
+            raise ValueError("Name is required")
+        if len(name) > 100:
+            raise ValueError("Name must be 100 characters or fewer")
+        return name
+
+
 class GoogleLogin(BaseModel):
     credential: str
