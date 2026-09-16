@@ -294,7 +294,7 @@ const Task = () => {
 
                   <div className="min-w-0 flex-1 pt-1.5">
                     <div>
-                      <p className={`break-words text-[15px] ${task.completed ? "text-slate-500 line-through decoration-slate-400" : "text-slate-800"}`}>
+                      <p className={`break-words text-[15px] ${task.completed ? "text-slate-500 line-through decoration-slate-400" : "text-slate-800 font-semibold"}`}>
                         {task.title}
                       </p>
                       {task.description ? (
