@@ -13,6 +13,11 @@ export const ENDPOINTS = {
   GET_TASKS: () => "/tasks/get-tasks",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,
   DELETE_TASK: (id) => `/tasks/delete-task?id=${id}`,
+  CREATE_PROJECT: () => "/projects/create-project",
+  GET_PROJECTS: () => "/projects/get-projects",
+  GET_PROJECT: (id) => `/projects/${id}`,
+  GET_AVAILABLE_PROJECT_USERS: (id) => `/projects/${id}/available-users`,
+  ADD_PROJECT_MEMBER: (id) => `/projects/${id}/members`,
   GOOGLE_LOGIN: () => "/users/google",
 };
 

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import Login from "./components/Login";
 import Task from "./components/Task";
+import Project from "./components/Project";
+import ProjectDetails from "./components/ProjectDetails";
 import Account from "./components/Account";
 import ForgotPassword from "./components/ForgotPassword";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
@@ -18,7 +20,12 @@ const DashboardLayout = () => {
   const [profile, setProfile] = useState(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState("");
+  const [projects, setProjects] = useState([]);
+  const [isProjectsLoading, setIsProjectsLoading] = useState(true);
+  const [projectsError, setProjectsError] = useState("");
+  const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const location = useLocation();
+  const isProfileComplete = Boolean(profile?.profile_complete);
 
   const loadProfile = async () => {
     setIsProfileLoading(true);
@@ -53,10 +60,61 @@ const DashboardLayout = () => {
     };
   }, []);
 
+  const loadProjects = async () => {
+    setIsProjectsLoading(true);
+    setProjectsError("");
+    try {
+      const response = await instance.get(ENDPOINTS.GET_PROJECTS());
+      setProjects(response.data);
+    } catch (error) {
+      setProjectsError(error.response?.data?.detail ?? "We couldn't load your projects.");
+    } finally {
+      setIsProjectsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isProfileComplete) return undefined;
+
+    let isCurrent = true;
+    instance
+      .get(ENDPOINTS.GET_PROJECTS())
+      .then((response) => {
+        if (isCurrent) setProjects(response.data);
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setProjectsError(error.response?.data?.detail ?? "We couldn't load your projects.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsProjectsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isProfileComplete]);
+
+  const addProjectToList = (project) => {
+    setProjects((current) => [...current, project].sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const updateProjectInList = (projectId, updates) => {
+    setProjects((current) => current.map((project) => (
+      project.id === Number(projectId) ? { ...project, ...updates } : project
+    )));
+  };
+
   if (isProfileLoading) {
     return (
       <div className="flex min-h-svh bg-[#f4f6f2]">
-        <Navbar filter={filter} onFilterChange={setFilter} profile={profile} />
+        <Navbar
+          filter={filter}
+          onFilterChange={setFilter}
+          profile={profile}
+          projects={projects}
+        />
         <main className="grid min-w-0 flex-1 place-items-center px-4 text-sm font-semibold text-slate-600" role="status">
           Loading your account...
         </main>
@@ -74,8 +132,30 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex min-h-svh bg-[#f4f6f2]">
-      <Navbar filter={filter} onFilterChange={setFilter} profile={profile} />
-      <Outlet context={{ filter, onFilterChange: setFilter, profile, isProfileLoading, profileError, loadProfile, onProfileChange: setProfile }} />
+      <Navbar
+        filter={filter}
+        onFilterChange={setFilter}
+        profile={profile}
+        projects={projects}
+      />
+      <Outlet context={{
+        filter,
+        onFilterChange: setFilter,
+        profile,
+        isProfileLoading,
+        profileError,
+        loadProfile,
+        onProfileChange: setProfile,
+        projects,
+        isProjectsLoading,
+        projectsError,
+        loadProjects,
+        isAddProjectOpen,
+        onAddProjectOpen: () => setIsAddProjectOpen(true),
+        onAddProjectClose: () => setIsAddProjectOpen(false),
+        onProjectCreated: addProjectToList,
+        onProjectUpdated: updateProjectInList,
+      }} />
     </div>
   );
 };
@@ -90,6 +170,8 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<ProtectedRoute />}>
             <Route path="/tasks" element={<Task />} />
+            <Route path="/projects" element={<Project />} />
+            <Route path="/projects/:projectId" element={<ProjectDetails />} />
             <Route path="/account" element={<Account />} />
           </Route>
         </Routes>

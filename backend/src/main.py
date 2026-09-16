@@ -1,8 +1,8 @@
 from fastapi import FastAPI
-from .routers import task, user
+from .routers import project, task, user
 from .database import Base, engine, migrate_existing_schema
 from fastapi.middleware.cors import CORSMiddleware
-from .models import Task
+from .models import Project, ProjectMember, Task
 
 app = FastAPI()
 app.add_middleware(
@@ -21,3 +21,4 @@ def root():
 
 app.include_router(task.router)
 app.include_router(user.router)
+app.include_router(project.router)
