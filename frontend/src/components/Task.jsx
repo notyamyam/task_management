@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Check,
   CheckCircle2,
@@ -42,6 +42,7 @@ const Task = () => {
   const [inputDescription, setInputDescription] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editable, setEditable] = useState(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [taskToDelete, setTaskToDelete] = useState(null);
@@ -49,6 +50,7 @@ const Task = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const editorCloseTimer = useRef(null);
 
   const loadTasks = async () => {
     setIsLoading(true);
@@ -85,6 +87,15 @@ const Task = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (editable === null) return undefined;
+
+    const animationFrame = window.requestAnimationFrame(() => setIsEditorOpen(true));
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [editable]);
+
+  useEffect(() => () => window.clearTimeout(editorCloseTimer.current), []);
+
   const addTask = async (event) => {
     event.preventDefault();
     const title = inputTask.trim();
@@ -116,16 +127,28 @@ const Task = () => {
   };
 
   const startEditing = (task) => {
+    window.clearTimeout(editorCloseTimer.current);
+    setIsEditorOpen(false);
     setEditable(task.id);
     setEditTitle(task.title);
     setEditDescription(task.description ?? "");
   };
 
-  const closeEditor = () => {
-    if (isSaving) return;
+  const finishClosingEditor = () => {
+    window.clearTimeout(editorCloseTimer.current);
     setEditable(null);
     setEditTitle("");
     setEditDescription("");
+  };
+
+  const animateEditorClosed = () => {
+    setIsEditorOpen(false);
+    editorCloseTimer.current = window.setTimeout(finishClosingEditor, 300);
+  };
+
+  const closeEditor = () => {
+    if (isSaving) return;
+    animateEditorClosed();
   };
 
   const saveTask = async (event, task) => {
@@ -146,9 +169,7 @@ const Task = () => {
       setTasks((current) =>
         current.map((item) => (item.id === task.id ? response.data : item)),
       );
-      setEditable(null);
-      setEditTitle("");
-      setEditDescription("");
+      animateEditorClosed();
       toast.success("Task updated.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't save the task."));
@@ -379,7 +400,7 @@ const Task = () => {
 
       {editingTask ? (
           <div
-            className="fixed inset-0 z-50 flex justify-end bg-slate-950/45"
+            className={`fixed inset-0 z-50 flex justify-end bg-slate-950/45 transition-opacity duration-200 motion-reduce:transition-none ${isEditorOpen ? "opacity-100" : "opacity-0"}`}
             role="presentation"
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) closeEditor();
@@ -389,9 +410,14 @@ const Task = () => {
               role="dialog"
               aria-modal="true"
               aria-labelledby="edit-task-drawer-title"
-              className="flex h-svh w-full flex-col bg-white shadow-2xl sm:max-w-xl sm:border-l sm:border-slate-200"
+              className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:max-w-xl sm:border-l sm:border-slate-200 ${isEditorOpen ? "translate-x-0" : "translate-x-full"}`}
               onKeyDown={(event) => {
                 if (event.key === "Escape") closeEditor();
+              }}
+              onTransitionEnd={(event) => {
+                if (event.target === event.currentTarget && event.propertyName === "transform" && !isEditorOpen) {
+                  finishClosingEditor();
+                }
               }}
             >
               <div className="flex min-h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-7">
