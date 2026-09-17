@@ -29,7 +29,7 @@ const Login = () => {
       );
 
       localStorage.setItem("token", response.data.token);
-      navigate(response.data.profile_complete ? "/tasks" : "/account", {
+      navigate(response.data.profile_complete ? "/dashboard" : "/account", {
         state: { completeProfile: true },
       });
     } catch (requestError) {
@@ -70,17 +70,17 @@ const Login = () => {
             A clearer workday
           </p>
           <h1 className="text-4xl leading-[1.08] font-semibold tracking-[-0.045em] xl:text-5xl">
-            Keep your tasks simple and your focus clear.
+            Keep your work organized and your focus clear.
           </h1>
           <p className="mt-4 max-w-md text-sm leading-6 text-emerald-50/70">
-            Capture what needs doing, stay organized, and move through your day
-            with less noise.
+            Bring tasks and projects into one focused workspace, then move
+            through your day with less noise.
           </p>
         </div>
 
         <p className="flex items-center gap-2 text-sm text-emerald-50/70">
           <Check aria-hidden="true" className="size-4 text-[#dce993]" />
-          Your personal task space
+          Your personal workspace
         </p>
       </section>
 
@@ -105,7 +105,7 @@ const Login = () => {
             <p className="mt-2 text-sm leading-5 text-slate-600">
               {isRegistering
                 ? "Use your email and a password to create your workspace."
-                : "Enter your details to continue to your tasks."}
+                : "Enter your details to continue to your workspace."}
             </p>
           </header>
 
@@ -124,7 +124,7 @@ const Login = () => {
                 });
 
                 localStorage.setItem("token", response.data.token);
-                navigate(response.data.profile_complete ? "/tasks" : "/account", {
+                navigate(response.data.profile_complete ? "/dashboard" : "/account", {
                   state: { completeProfile: true },
                 });
               } catch (error) {

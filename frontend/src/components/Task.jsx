@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   CalendarClock,
   Circle,
+  FolderKanban,
   Inbox,
   ListTodo,
   LoaderCircle,
@@ -15,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "react-toastify";
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 
 import { ENDPOINTS, instance } from "./api";
 
@@ -36,15 +37,17 @@ const getErrorMessage = (error, fallback) => {
 };
 
 const Task = () => {
-  const { filter, onFilterChange } = useOutletContext();
+  const { filter, onFilterChange, projects, isProjectsLoading } = useOutletContext();
   const [tasks, setTasks] = useState([]);
   const [inputTask, setInputTask] = useState("");
   const [inputDescription, setInputDescription] = useState("");
+  const [inputProjectId, setInputProjectId] = useState("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editable, setEditable] = useState(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editProjectId, setEditProjectId] = useState("");
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -99,17 +102,19 @@ const Task = () => {
   const addTask = async (event) => {
     event.preventDefault();
     const title = inputTask.trim();
-    if (!title) return;
+    if (!title || !inputProjectId) return;
 
     setIsAdding(true);
     try {
       const response = await instance.post(ENDPOINTS.CREATE_TASK(), {
         title,
         description: inputDescription.trim() || null,
+        project_id: Number(inputProjectId),
       });
       setTasks((current) => [response.data, ...current]);
       setInputTask("");
       setInputDescription("");
+      setInputProjectId("");
       setIsAddModalOpen(false);
       onFilterChange("all");
     } catch (error) {
@@ -123,6 +128,7 @@ const Task = () => {
     if (isAdding) return;
     setInputTask("");
     setInputDescription("");
+    setInputProjectId("");
     setIsAddModalOpen(false);
   };
 
@@ -132,6 +138,7 @@ const Task = () => {
     setEditable(task.id);
     setEditTitle(task.title);
     setEditDescription(task.description ?? "");
+    setEditProjectId(task.project_id ? String(task.project_id) : "");
   };
 
   const finishClosingEditor = () => {
@@ -139,6 +146,7 @@ const Task = () => {
     setEditable(null);
     setEditTitle("");
     setEditDescription("");
+    setEditProjectId("");
   };
 
   const animateEditorClosed = () => {
@@ -158,6 +166,10 @@ const Task = () => {
       toast.error("Task title cannot be empty.");
       return;
     }
+    if (!editProjectId) {
+      toast.error("Select a project for this task.");
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -165,6 +177,7 @@ const Task = () => {
         title,
         description: editDescription.trim() || null,
         completed: task.completed,
+        project_id: Number(editProjectId),
       });
       setTasks((current) =>
         current.map((item) => (item.id === task.id ? response.data : item)),
@@ -184,6 +197,7 @@ const Task = () => {
         title: task.title,
         description: task.description,
         completed: !task.completed,
+        project_id: task.project_id,
       });
       setTasks((current) =>
         current.map((item) => (item.id === task.id ? response.data : item)),
@@ -220,7 +234,7 @@ const Task = () => {
 
   return (
     <main className="min-w-0 flex-1 bg-[#f4f6f2] px-3 py-5 text-slate-950 sm:px-5 sm:py-7 lg:px-7">
-      <div className="mx-auto max-w-5xl">
+      <div className="w-full">
         <header className="flex flex-col gap-3 border-b border-slate-300 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-1 text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Your workspace</p>
@@ -244,11 +258,16 @@ const Task = () => {
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
-            className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-800/40 bg-white px-4 text-sm font-bold text-emerald-900 shadow-sm hover:border-emerald-800 hover:bg-emerald-50 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 sm:ml-auto sm:w-auto"
+            disabled={isProjectsLoading || projects.length === 0}
+            title={projects.length === 0 ? "Create a project before adding tasks" : undefined}
+            className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-800/40 bg-white px-4 text-sm font-bold text-emerald-900 shadow-sm hover:border-emerald-800 hover:bg-emerald-50 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto sm:w-auto"
           >
             <Plus aria-hidden="true" className="size-4" />
             Add task
           </button>
+          {!isProjectsLoading && projects.length === 0 ? (
+            <p className="mt-2 text-right text-xs text-slate-500">Create a <Link to="/projects" className="font-bold text-emerald-800 underline underline-offset-2 focus-visible:outline-3 focus-visible:outline-emerald-800">project</Link> before adding tasks.</p>
+          ) : null}
         </section>
 
         <section aria-labelledby="task-list-heading" className="bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200">
@@ -302,6 +321,10 @@ const Task = () => {
                           {task.description}
                         </p>
                       ) : null}
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                        <FolderKanban aria-hidden="true" className="size-3.5" />
+                        {task.project_name || "Unassigned legacy task"}
+                      </p>
                     </div>
 
                     <dl className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-slate-500 lg:flex-row lg:gap-4">
@@ -372,6 +395,20 @@ const Task = () => {
               </div>
 
               <div className="mt-4">
+                <label htmlFor="new-task-project" className="mb-1.5 block text-sm font-semibold text-slate-800">Project</label>
+                <select
+                  id="new-task-project"
+                  required
+                  value={inputProjectId}
+                  onChange={(event) => setInputProjectId(event.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
+                >
+                  <option value="">Select a project</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>
+              </div>
+
+              <div className="mt-4">
                 <label htmlFor="new-task-description" className="mb-1.5 block text-sm font-semibold text-slate-800">
                   Description <span className="font-normal text-slate-500">(optional)</span>
                 </label>
@@ -388,7 +425,7 @@ const Task = () => {
 
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={closeAddModal} disabled={isAdding} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
-                <button type="submit" disabled={isAdding || !inputTask.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+                <button type="submit" disabled={isAdding || !inputTask.trim() || !inputProjectId} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
                   {isAdding ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}
                   {isAdding ? "Adding..." : "Add task"}
                 </button>
@@ -447,6 +484,20 @@ const Task = () => {
                   </div>
 
                   <div className="mt-6">
+                    <label htmlFor="edit-task-project" className="mb-1.5 block text-sm font-semibold text-slate-800">Project</label>
+                    <select
+                      id="edit-task-project"
+                      required
+                      value={editProjectId}
+                      onChange={(event) => setEditProjectId(event.target.value)}
+                      className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
+                    >
+                      <option value="">Select a project</option>
+                      {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="mt-6">
                     <label htmlFor="edit-task-description" className="mb-1.5 block text-sm font-semibold text-slate-800">
                       Description <span className="font-normal text-slate-500">(optional)</span>
                     </label>
@@ -477,7 +528,7 @@ const Task = () => {
 
                 <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
                   <button type="button" onClick={closeEditor} disabled={isSaving} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
-                  <button type="submit" disabled={isSaving || !editTitle.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  <button type="submit" disabled={isSaving || !editTitle.trim() || !editProjectId} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
                     {isSaving ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}
                     {isSaving ? "Saving..." : "Save changes"}
                   </button>

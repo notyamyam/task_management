@@ -35,7 +35,7 @@ const Account = () => {
       onProfileChange(response.data);
       toast.success("Account details updated.");
       if (location.state?.completeProfile || !profile?.profile_complete) {
-        navigate("/tasks", { replace: true });
+        navigate("/dashboard", { replace: true });
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't update your account details."));
@@ -76,7 +76,7 @@ const Account = () => {
 
   return (
     <main className="min-w-0 flex-1 bg-[#f4f6f2] px-3 py-5 text-slate-950 sm:px-5 sm:py-7 lg:px-7">
-      <div className="mx-auto max-w-4xl">
+      <div className="w-full">
         <header className="border-b border-slate-300 pb-4">
           <p className="mb-1 text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Settings</p>
           <h1 className="text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">Your account</h1>

@@ -9,5 +9,6 @@ class Task(Base):
     description = Column(String)
     completed = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User model (assuming user_id is an integer)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

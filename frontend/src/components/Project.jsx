@@ -88,7 +88,7 @@ const Project = () => {
 
   return (
     <main className="min-w-0 flex-1 bg-[#f4f6f2] px-3 py-5 text-slate-950 sm:px-5 sm:py-7 lg:px-7">
-      <div className="mx-auto max-w-5xl">
+      <div className="w-full">
         <header className="flex flex-col gap-4 border-b border-slate-300 pb-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-1 text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Organize your work</p>
@@ -158,7 +158,7 @@ const Project = () => {
               </button>
             </div>
           ) : (
-            <ul className={view === "grid" ? "grid gap-px bg-slate-200 sm:grid-cols-2" : "divide-y divide-slate-200"}>
+            <ul className={view === "grid" ? "grid gap-px bg-slate-200 sm:grid-cols-2 xl:grid-cols-3" : "divide-y divide-slate-200"}>
               {projects.map((project) => (
                 <li key={project.id} className="bg-white">
                   <button

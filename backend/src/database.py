@@ -68,6 +68,14 @@ def migrate_existing_schema():
                     "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE "
                     "NOT NULL DEFAULT CURRENT_TIMESTAMP"
                 ))
+            if "project_id" not in task_columns:
+                project_reference = " REFERENCES projects(id)" if "projects" in tables else ""
+                connection.execute(text(
+                    f"ALTER TABLE tasks ADD COLUMN project_id INTEGER{project_reference}"
+                ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_project_id ON tasks (project_id)"
+            ))
 
 def get_db():
     db = session()

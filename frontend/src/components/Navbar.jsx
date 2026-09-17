@@ -64,7 +64,7 @@ const Navbar = ({ filter, onFilterChange, profile, projects = [] }) => {
   };
   return (
     <aside className="sticky top-0 z-20 flex h-svh w-16 flex-none flex-col border-r border-emerald-900/70 bg-[#173b35] px-2 py-3 text-white sm:w-52 sm:px-3 sm:py-4">
-      <NavLink to="/tasks" className="flex min-h-11 items-center justify-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-2">
+      <NavLink to="/dashboard" className="flex min-h-11 items-center justify-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-2">
         <span className="grid size-9 flex-none place-items-center rounded-lg bg-[#dce993] text-sm font-black text-[#173b35]">C</span>
         <span className="hidden text-base font-bold tracking-tight sm:inline">Corner</span>
       </NavLink>
@@ -72,7 +72,7 @@ const Navbar = ({ filter, onFilterChange, profile, projects = [] }) => {
       <nav aria-label="Main navigation" className="mt-6 flex-1">
         <p className="mb-1.5 hidden px-3 text-[10px] font-bold tracking-[0.16em] text-emerald-100/55 uppercase sm:block">Menu</p>
         <NavLink
-          to="/tasks"
+          to="/dashboard"
           onClick={() => {
              setIsTaskMenuOpen(false);
              setIsProjectMenuOpen(false);
@@ -106,7 +106,7 @@ const Navbar = ({ filter, onFilterChange, profile, projects = [] }) => {
             className={({ isActive }) => `flex min-h-11 w-full items-center justify-center gap-2.5 rounded-lg text-sm font-semibold text-emerald-50 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-3 ${isActive ? "bg-white/10" : ""}`}
           >
             <ListTodo aria-hidden="true" className="size-5 flex-none text-emerald-100" />
-            <span className="hidden flex-1 text-left sm:inline">All task</span>
+            <span className="hidden flex-1 text-left sm:inline">Tasks</span>
             <ChevronDown aria-hidden="true" className={`hidden size-4 transition-transform sm:block ${isTaskMenuOpen ? "rotate-180" : ""}`} />
           </NavLink>
 

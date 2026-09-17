@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
+import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 import Task from "./components/Task";
 import Project from "./components/Project";
@@ -169,6 +170,7 @@ function App() {
           <Route path="/" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route element={<ProtectedRoute />}>
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/tasks" element={<Task />} />
             <Route path="/projects" element={<Project />} />
             <Route path="/projects/:projectId" element={<ProjectDetails />} />
