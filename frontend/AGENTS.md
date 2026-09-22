@@ -12,6 +12,7 @@
 - Build responsive layouts for desktop and mobile without hiding required actions or information.
 - Every enabled button must use a pointer cursor. With Tailwind CSS, include `cursor-pointer`; disabled buttons must communicate their disabled state.
 - Every destructive action must open an accessible confirmation dialog before sending the delete request.
+- Always use a drawer, not a modal dialog, when editing an existing entity.
 - Navigation submenus must open on hover and remain operable by keyboard and touch.
 - Use semantic controls, explicit form labels, visible keyboard focus, and meaningful dialog titles.
 - Provide clear loading, error, empty, success, and disabled states. Do not use toast notifications as the only feedback for critical errors.

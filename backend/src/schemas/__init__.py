@@ -1,3 +1,4 @@
+from .ai import AIChatAction, AIChatHistoryMessage, AIChatRequest, AIChatResponse, AIReportContent
 from .project import ProjectCreate, ProjectMemberCreate
 from .task import TaskCreate
 from .user import (

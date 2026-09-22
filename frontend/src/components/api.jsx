@@ -18,6 +18,9 @@ export const ENDPOINTS = {
   GET_PROJECT: (id) => `/projects/${id}`,
   GET_AVAILABLE_PROJECT_USERS: (id) => `/projects/${id}/available-users`,
   ADD_PROJECT_MEMBER: (id) => `/projects/${id}/members`,
+  AI_CHAT: () => "/ai/chat",
+  AI_TASK_EXPORT: (projectId) => projectId ? `/ai/task-export.csv?project_id=${projectId}` : "/ai/task-export.csv",
+  AI_PROJECT_TASK_REPORT: (id) => `/ai/projects/${id}/task-report.csv`,
   GOOGLE_LOGIN: () => "/users/google",
 };
 

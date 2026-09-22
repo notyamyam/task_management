@@ -7,6 +7,7 @@ import Project from "./components/Project";
 import ProjectDetails from "./components/ProjectDetails";
 import Account from "./components/Account";
 import ForgotPassword from "./components/ForgotPassword";
+import ChatAssistant from "./components/ChatAssistant";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { ENDPOINTS, instance } from "./components/api";
@@ -27,6 +28,9 @@ const DashboardLayout = () => {
   const [isAddProjectOpen, setIsAddProjectOpen] = useState(false);
   const location = useLocation();
   const isProfileComplete = Boolean(profile?.profile_complete);
+  const projectChatMatch = location.pathname.match(/^\/projects\/(\d+)$/);
+  const chatProjectId = projectChatMatch?.[1] ?? null;
+  const showChatAssistant = location.pathname === "/dashboard" || Boolean(chatProjectId);
 
   const loadProfile = async () => {
     setIsProfileLoading(true);
@@ -157,6 +161,14 @@ const DashboardLayout = () => {
         onProjectCreated: addProjectToList,
         onProjectUpdated: updateProjectInList,
       }} />
+      {showChatAssistant ? (
+        <ChatAssistant
+          key={chatProjectId ? `project-${chatProjectId}` : "workspace"}
+          projectId={chatProjectId}
+          projectName={projects.find((project) => project.id === Number(chatProjectId))?.name}
+          projects={projects}
+        />
+      ) : null}
     </div>
   );
 };

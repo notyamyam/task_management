@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     smtp_from_email: str = ""
     smtp_use_tls: bool = True
     smtp_use_ssl: bool = False
+    ai_api_key: str = ""
+    ai_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = ""
+    ai_timeout_seconds: int = 45
 
     class Config:
         env_file = ".env"
