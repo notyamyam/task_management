@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db
-from ..models import Project, ProjectMember, User
+from ..models import Project, ProjectMember, Task, User
 from ..schemas import ProjectCreate, ProjectMemberCreate
 from ..security import auth
 
@@ -30,6 +31,13 @@ def get_accessible_project(project_id, current_user, db):
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+def get_owned_project(project_id, current_user, db):
+    project = get_accessible_project(project_id, current_user, db)
+    if project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the project owner can modify it")
     return project
 
 
@@ -64,7 +72,17 @@ def create_project(
 ):
     new_project = Project(**project.model_dump(), user_id=current_user.id)
     db.add(new_project)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        duplicate = db.query(Project.id).filter(Project.name == project.name).first()
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Project name is already in use",
+            )
+        raise
     db.refresh(new_project)
     return serialize_project(new_project, db)
 
@@ -111,6 +129,52 @@ def get_project(
         "owner": serialize_user(owner),
         "members": [serialize_user(member) for member in members],
     }
+
+
+@router.put("/{project_id}")
+def update_project(
+    project_id: int,
+    payload: ProjectCreate,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    project = get_owned_project(project_id, current_user, db)
+    project.name = payload.name
+    project.description = payload.description
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        duplicate = (
+            db.query(Project.id)
+            .filter(Project.name == payload.name, Project.id != project_id)
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Project name is already in use",
+            )
+        raise
+
+    db.refresh(project)
+    return serialize_project(project, db)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: int,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    project = get_owned_project(project_id, current_user, db)
+    db.query(Task).filter(Task.project_id == project.id).delete(synchronize_session=False)
+    db.query(ProjectMember).filter(ProjectMember.project_id == project.id).delete(
+        synchronize_session=False
+    )
+    db.delete(project)
+    db.commit()
 
 
 @router.get("/{project_id}/available-users")

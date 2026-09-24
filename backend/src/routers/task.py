@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, or_
 
 from ..database import get_db
-from ..models import Project, ProjectMember, Task
+from ..models import Project, ProjectMember, Task, User
 from ..schemas import TaskCreate
 from ..security import auth
 
@@ -50,14 +50,31 @@ def serialize_task(task, db):
     project = None
     if task.project_id is not None:
         project = db.query(Project).filter(Project.id == task.project_id).first()
+    creator = db.query(User).filter(User.id == task.user_id).first()
+    updater = db.query(User).filter(User.id == task.updated_by_user_id).first()
+
+    def serialize_user(user):
+        if not user:
+            return None
+        return {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+        }
+
     return {
         "id": task.id,
         "title": task.title,
         "description": task.description,
         "completed": task.completed,
         "user_id": task.user_id,
+        "created_by": serialize_user(creator),
+        "updated_by": serialize_user(updater),
         "project_id": task.project_id,
         "project_name": project.name if project else None,
+        "tags": task.tags or [],
+        "priority": task.priority,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
     }
@@ -73,7 +90,11 @@ def create_task(
         raise HTTPException(status_code=422, detail="Select a project for this task")
     get_accessible_project(task.project_id, current_user, db)
 
-    new_task = Task(**task.model_dump(), user_id=current_user.id)
+    new_task = Task(
+        **task.model_dump(),
+        user_id=current_user.id,
+        updated_by_user_id=current_user.id,
+    )
     db.add(new_task)
     db.commit()
     db.refresh(new_task)
@@ -132,6 +153,7 @@ def update_task(
 
     for key, value in task.model_dump().items():
         setattr(existing_task, key, value)
+    existing_task.updated_by_user_id = current_user.id
 
     db.commit()
     db.refresh(existing_task)

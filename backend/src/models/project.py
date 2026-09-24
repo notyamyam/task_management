@@ -1,10 +1,20 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 
 from ..database import Base
 
 
 class Project(Base):
     __tablename__ = "projects"
+    __table_args__ = (Index("ux_projects_name", "name", unique=True),)
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)

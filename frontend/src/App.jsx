@@ -108,7 +108,11 @@ const DashboardLayout = () => {
   const updateProjectInList = (projectId, updates) => {
     setProjects((current) => current.map((project) => (
       project.id === Number(projectId) ? { ...project, ...updates } : project
-    )));
+    )).sort((a, b) => a.name.localeCompare(b.name)));
+  };
+
+  const removeProjectFromList = (projectId) => {
+    setProjects((current) => current.filter((project) => project.id !== Number(projectId)));
   };
 
   if (isProfileLoading) {
@@ -160,6 +164,7 @@ const DashboardLayout = () => {
         onAddProjectClose: () => setIsAddProjectOpen(false),
         onProjectCreated: addProjectToList,
         onProjectUpdated: updateProjectInList,
+        onProjectDeleted: removeProjectFromList,
       }} />
       {showChatAssistant ? (
         <ChatAssistant

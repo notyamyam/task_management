@@ -56,6 +56,51 @@ def migrate_existing_schema():
                 )
             )
 
+        if "projects" in tables:
+            unique_name_exists = any(
+                index.get("unique") and index.get("column_names") == ["name"]
+                for index in inspector.get_indexes("projects")
+            ) or any(
+                constraint.get("column_names") == ["name"]
+                for constraint in inspector.get_unique_constraints("projects")
+            )
+
+            if not unique_name_exists:
+                connection.execute(text("LOCK TABLE projects IN ACCESS EXCLUSIVE MODE"))
+                projects = connection.execute(
+                    text("SELECT id, name FROM projects ORDER BY name, id")
+                ).mappings().all()
+                used_names = {project["name"] for project in projects}
+                seen_names = set()
+
+                for project in projects:
+                    name = project["name"]
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        continue
+
+                    suffix_number = 1
+                    while True:
+                        suffix = (
+                            f" ({project['id']})"
+                            if suffix_number == 1
+                            else f" ({project['id']}-{suffix_number})"
+                        )
+                        unique_name = f"{name[:255 - len(suffix)]}{suffix}"
+                        if unique_name not in used_names:
+                            break
+                        suffix_number += 1
+
+                    connection.execute(
+                        text("UPDATE projects SET name = :name WHERE id = :project_id"),
+                        {"name": unique_name, "project_id": project["id"]},
+                    )
+                    used_names.add(unique_name)
+
+                connection.execute(text(
+                    "CREATE UNIQUE INDEX ux_projects_name ON projects (name)"
+                ))
+
         if "tasks" in tables:
             task_columns = {column["name"] for column in inspector.get_columns("tasks")}
             if "created_at" not in task_columns:
@@ -72,6 +117,31 @@ def migrate_existing_schema():
                 project_reference = " REFERENCES projects(id)" if "projects" in tables else ""
                 connection.execute(text(
                     f"ALTER TABLE tasks ADD COLUMN project_id INTEGER{project_reference}"
+                ))
+            if "tags" not in task_columns:
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN tags JSONB NOT NULL DEFAULT '[]'"
+                ))
+            elif str(next(
+                column["type"] for column in inspector.get_columns("tasks")
+                if column["name"] == "tags"
+            )).upper() != "JSONB":
+                connection.execute(text(
+                    "ALTER TABLE tasks ALTER COLUMN tags TYPE JSONB USING tags::jsonb"
+                ))
+            if "priority" not in task_columns:
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN priority VARCHAR(10) "
+                    "NOT NULL DEFAULT 'medium'"
+                ))
+            if "updated_by_user_id" not in task_columns:
+                user_reference = " REFERENCES users(id)" if "users" in tables else ""
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN updated_by_user_id "
+                    f"INTEGER{user_reference}"
+                ))
+                connection.execute(text(
+                    "UPDATE tasks SET updated_by_user_id = user_id"
                 ))
             connection.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_tasks_project_id ON tasks (project_id)"

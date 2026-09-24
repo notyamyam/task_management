@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CalendarClock, FolderKanban, LoaderCircle, Plus, UserRound, Users, X } from "lucide-react";
-import { Link, useOutletContext, useParams } from "react-router-dom";
+import { ArrowLeft, CalendarClock, FolderKanban, LoaderCircle, Pencil, Plus, Save, Trash2, UserRound, Users, X } from "lucide-react";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
@@ -25,13 +25,23 @@ const initials = (user) => {
 
 const ProjectDetails = () => {
   const { projectId } = useParams();
-  const { onProjectUpdated } = useOutletContext();
+  const navigate = useNavigate();
+  const { onProjectUpdated, onProjectDeleted } = useOutletContext();
   const [projectRequest, setProjectRequest] = useState({ projectId: null, data: null, error: "" });
   const [isMemberDialogOpen, setIsMemberDialogOpen] = useState(false);
   const [availableUsers, setAvailableUsers] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [isAddingMember, setIsAddingMember] = useState(false);
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editError, setEditError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -101,6 +111,79 @@ const ProjectDetails = () => {
     }
   };
 
+  const openEditDrawer = () => {
+    setEditName(project.name);
+    setEditDescription(project.description || "");
+    setEditError("");
+    setIsEditDrawerOpen(true);
+  };
+
+  const closeEditDrawer = () => {
+    if (isSaving) return;
+    setIsEditDrawerOpen(false);
+    setEditName("");
+    setEditDescription("");
+    setEditError("");
+  };
+
+  const updateProject = async (event) => {
+    event.preventDefault();
+    const name = editName.trim();
+    if (!name) return;
+
+    setIsSaving(true);
+    setEditError("");
+    try {
+      const response = await instance.put(ENDPOINTS.UPDATE_PROJECT(projectId), {
+        name,
+        description: editDescription.trim() || null,
+      });
+      setProjectRequest((current) => ({
+        ...current,
+        data: { ...current.data, ...response.data },
+      }));
+      onProjectUpdated(projectId, response.data);
+      setIsEditDrawerOpen(false);
+      setEditName("");
+      setEditDescription("");
+      toast.success("Project updated.");
+    } catch (requestError) {
+      setEditError(getErrorMessage(requestError, "Couldn't update the project."));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const openDeleteDialog = () => {
+    setDeleteConfirmation("");
+    setDeleteError("");
+    setIsDeleteDialogOpen(true);
+  };
+
+  const closeDeleteDialog = () => {
+    if (isDeleting) return;
+    setIsDeleteDialogOpen(false);
+    setDeleteConfirmation("");
+    setDeleteError("");
+  };
+
+  const deleteProject = async (event) => {
+    event.preventDefault();
+    if (deleteConfirmation !== project.name) return;
+
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      await instance.delete(ENDPOINTS.DELETE_PROJECT(projectId));
+      onProjectDeleted(projectId);
+      toast.success("Project deleted.");
+      navigate("/projects", { replace: true });
+    } catch (requestError) {
+      setDeleteError(getErrorMessage(requestError, "Couldn't delete the project."));
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return <main className="grid min-w-0 flex-1 place-items-center bg-[#f4f6f2] text-sm text-slate-600" role="status"><span className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-5 animate-spin text-emerald-800" />Loading project...</span></main>;
   }
@@ -121,14 +204,26 @@ const ProjectDetails = () => {
         <Link to="/projects" className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-slate-600 hover:text-emerald-900 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"><ArrowLeft aria-hidden="true" className="size-4" />All projects</Link>
 
         <header className="mt-2 border-b border-slate-300 pb-5">
-          <div className="flex items-start gap-3 sm:gap-4">
-            <span className="mt-0.5 grid size-11 flex-none place-items-center rounded-xl bg-[#173b35] text-[#dce993]"><FolderKanban aria-hidden="true" className="size-5" /></span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Project details</p>
-              <h1 className="mt-0.5 break-words text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">{project.name}</h1>
-              {project.description ? <p className="mt-2 max-w-4xl whitespace-pre-wrap text-sm leading-6 text-slate-600">{project.description}</p> : null}
-              <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock aria-hidden="true" className="size-3.5" />Created {DATE_FORMATTER.format(new Date(project.created_at))}</p>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3 sm:gap-4">
+              <span className="mt-0.5 grid size-11 flex-none place-items-center rounded-xl bg-[#173b35] text-[#dce993]"><FolderKanban aria-hidden="true" className="size-5" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Project details</p>
+                <div className="mt-0.5 flex min-w-0 items-start gap-1.5">
+                  <h1 className="min-w-0 break-words text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">{project.name}</h1>
+                  {project.is_owner ? (
+                    <button type="button" onClick={openEditDrawer} aria-label={`Edit ${project.name} project`} title="Edit project" className="grid size-10 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-white hover:text-emerald-900 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800">
+                      <Pencil aria-hidden="true" className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
+                {project.description ? <p className="mt-2 max-w-4xl whitespace-pre-wrap text-sm leading-6 text-slate-600">{project.description}</p> : null}
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500"><CalendarClock aria-hidden="true" className="size-3.5" />Created {DATE_FORMATTER.format(new Date(project.created_at))}</p>
+              </div>
             </div>
+            {project.is_owner ? (
+              <button type="button" onClick={openDeleteDialog} aria-label={`Delete ${project.name} project`} title="Delete project" className="grid size-11 flex-none cursor-pointer place-items-center self-end rounded-lg border border-red-200 bg-white text-red-700 shadow-sm hover:bg-red-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-red-700 sm:self-start"><Trash2 aria-hidden="true" className="size-4" /></button>
+            ) : null}
           </div>
         </header>
 
@@ -154,6 +249,48 @@ const ProjectDetails = () => {
             <form onSubmit={addMember} className="p-5">
               {isUsersLoading ? <div className="flex min-h-32 items-center justify-center gap-2 text-sm text-slate-600" role="status"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading users...</div> : availableUsers.length === 0 ? <div className="flex min-h-32 flex-col items-center justify-center text-center"><UserRound aria-hidden="true" className="size-7 text-slate-400" /><p className="mt-3 text-sm font-semibold">Everyone is already included</p><p className="mt-1 text-xs text-slate-500">There are no available users to add.</p></div> : <div><label htmlFor="project-member" className="mb-1.5 block text-sm font-semibold text-slate-800">User</label><select id="project-member" required value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"><option value="">Select a user</option>{availableUsers.map((user) => <option key={user.id} value={user.id}>{displayName(user)} ({user.email})</option>)}</select></div>}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" disabled={isAddingMember} onClick={() => setIsMemberDialogOpen(false)} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button><button type="submit" disabled={isUsersLoading || isAddingMember || !selectedUserId} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-4 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{isAddingMember ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}{isAddingMember ? "Adding..." : "Add member"}</button></div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {isEditDrawerOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/45" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditDrawer(); }}>
+          <aside role="dialog" aria-modal="true" aria-labelledby="edit-project-title" className="ml-auto flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
+            <div className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5 sm:px-7">
+              <div><p className="text-[10px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Project settings</p><h2 id="edit-project-title" className="text-lg font-semibold">Edit project</h2></div>
+              <button type="button" onClick={closeEditDrawer} disabled={isSaving} aria-label="Close project editor" className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><X aria-hidden="true" className="size-5" /></button>
+            </div>
+            <form onSubmit={updateProject} className="flex min-h-0 flex-1 flex-col">
+              <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+                <div><label htmlFor="edit-project-name" className="mb-1.5 block text-sm font-semibold">Project name</label><input id="edit-project-name" type="text" autoFocus required maxLength={255} value={editName} onChange={(event) => setEditName(event.target.value)} aria-describedby={editError ? "edit-project-error" : undefined} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
+                <div className="mt-5"><label htmlFor="edit-project-description" className="mb-1.5 block text-sm font-semibold">Description <span className="font-normal text-slate-500">(optional)</span></label><textarea id="edit-project-description" rows={6} maxLength={1000} value={editDescription} onChange={(event) => setEditDescription(event.target.value)} className="min-h-36 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm leading-6 shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /><p className="mt-1.5 text-right text-xs text-slate-500">{editDescription.length}/1000</p></div>
+                {editError ? <p id="edit-project-error" role="alert" className="mt-5 border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{editError}</p> : null}
+              </div>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
+                <button type="button" onClick={closeEditDrawer} disabled={isSaving} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+                <button type="submit" disabled={isSaving || !editName.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}{isSaving ? "Saving..." : "Save changes"}</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      ) : null}
+
+      {isDeleteDialogOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDeleteDialog(); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="delete-project-title" aria-describedby="delete-project-description delete-project-warning" className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl ring-1 ring-slate-900/10">
+            <span className="grid size-11 place-items-center rounded-full bg-red-50 text-red-700"><Trash2 aria-hidden="true" className="size-5" /></span>
+            <h2 id="delete-project-title" className="mt-4 text-lg font-semibold">Delete project?</h2>
+            <p id="delete-project-description" className="mt-2 text-sm leading-6 text-slate-600">This action permanently deletes <strong className="font-semibold text-slate-900">{project.name}</strong> and cannot be undone.</p>
+            <p id="delete-project-warning" className="mt-4 border-l-4 border-red-600 bg-red-50 px-3 py-2.5 text-sm font-semibold leading-5 text-red-800">All tasks in this project will also be permanently deleted.</p>
+            <form onSubmit={deleteProject} className="mt-5">
+              <label htmlFor="delete-project-confirmation" className="block text-sm font-semibold text-slate-800">Type <span className="break-all font-mono text-red-700">{project.name}</span> to confirm</label>
+              <input id="delete-project-confirmation" type="text" autoFocus autoComplete="off" value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} disabled={isDeleting} className="mt-2 h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-red-700 focus:ring-3 focus:ring-red-700/15 disabled:cursor-not-allowed disabled:bg-slate-100" />
+              {deleteError ? <p role="alert" className="mt-4 border-l-4 border-red-600 bg-red-50 px-3 py-2 text-sm font-semibold text-red-800">{deleteError}</p> : null}
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" disabled={isDeleting} onClick={closeDeleteDialog} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
+                <button type="submit" disabled={isDeleting || deleteConfirmation !== project.name} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:cursor-not-allowed disabled:opacity-50">{isDeleting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Trash2 aria-hidden="true" className="size-4" />}{isDeleting ? "Deleting..." : "Delete project"}</button>
+              </div>
             </form>
           </section>
         </div>

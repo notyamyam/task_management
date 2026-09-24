@@ -1,8 +1,30 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Circle, FileDown, ListTodo, LoaderCircle, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Check, Circle, FileDown, ListTodo, LoaderCircle, Pencil, Plus, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
+import {
+  PriorityBadge,
+  TaskAttributeFields,
+  TaskTags,
+} from "./TaskAttributes";
+import {
+  getTaskUserName,
+  parseTaskTags,
+  taskTagsToInput,
+  validateTaskTags,
+} from "./taskUtils";
+
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+const formatDateTime = (value) => {
+  if (!value) return "Not available";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Not available" : DATE_TIME_FORMATTER.format(date);
+};
 
 const getErrorMessage = (error, fallback) => {
   const detail = error.response?.data?.detail;
@@ -16,6 +38,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
   const [isEditDrawerVisible, setIsEditDrawerVisible] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [priority, setPriority] = useState("medium");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -58,6 +82,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(null);
     setTitle("");
     setDescription("");
+    setTags("");
+    setPriority("medium");
     setIsCreateFormOpen(true);
   };
 
@@ -67,6 +93,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(task);
     setTitle(task.title);
     setDescription(task.description || "");
+    setTags(taskTagsToInput(task.tags));
+    setPriority(task.priority || "medium");
   };
 
   const closeCreateForm = () => {
@@ -74,6 +102,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setIsCreateFormOpen(false);
     setTitle("");
     setDescription("");
+    setTags("");
+    setPriority("medium");
   };
 
   const finishClosingEditDrawer = () => {
@@ -81,6 +111,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(null);
     setTitle("");
     setDescription("");
+    setTags("");
+    setPriority("medium");
   };
 
   const animateEditDrawerClosed = () => {
@@ -97,6 +129,12 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     event.preventDefault();
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
+    const parsedTags = parseTaskTags(tags);
+    const tagsError = validateTaskTags(parsedTags);
+    if (tagsError) {
+      toast.error(tagsError);
+      return;
+    }
 
     setIsSubmitting(true);
     const payload = {
@@ -104,6 +142,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
       description: description.trim() || null,
       completed: editingTask?.completed || false,
       project_id: Number(projectId),
+      tags: parsedTags,
+      priority,
     };
 
     try {
@@ -123,6 +163,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
         setIsCreateFormOpen(false);
         setTitle("");
         setDescription("");
+        setTags("");
+        setPriority("medium");
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't save the task."));
@@ -138,6 +180,8 @@ const ProjectTaskList = ({ projectId, projectName }) => {
         description: task.description,
         completed: !task.completed,
         project_id: Number(projectId),
+        tags: task.tags || [],
+        priority: task.priority || "medium",
       });
       setTaskRequest((current) => ({
         ...current,
@@ -244,7 +288,15 @@ const ProjectTaskList = ({ projectId, projectName }) => {
             {tasks.map((task) => (
               <li key={task.id} className="flex min-h-16 items-start gap-2 px-2 py-2 sm:px-4">
                 <button type="button" onClick={() => toggleTask(task)} aria-label={task.completed ? `Mark ${task.title} as open` : `Mark ${task.title} as completed`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800">{task.completed ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
-                <div className="min-w-0 flex-1 py-2"><p className={`break-words text-sm font-semibold ${task.completed ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>{task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}</div>
+                <div className="min-w-0 flex-1 py-2">
+                  <p className={`break-words text-sm font-semibold ${task.completed ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>
+                  {task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5"><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /></div>
+                  <dl className="mt-2 flex flex-col gap-1 text-[11px] text-slate-500 xl:flex-row xl:gap-4">
+                    <div className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Created by</dt><dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd></div>
+                    <div className="flex items-center gap-1.5"><RefreshCw aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Updated by</dt><dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd></div>
+                  </dl>
+                </div>
                 <button type="button" onClick={() => openEditForm(task)} aria-label={`Edit ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button>
                 <button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
               </li>
@@ -255,11 +307,12 @@ const ProjectTaskList = ({ projectId, projectName }) => {
 
       {isCreateFormOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateForm(); }} onKeyDown={(event) => { if (event.key === "Escape") closeCreateForm(); }}>
-          <section role="dialog" aria-modal="true" aria-labelledby="project-task-form-title" className="w-full max-w-lg rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+          <section role="dialog" aria-modal="true" aria-labelledby="project-task-form-title" className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
             <div className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5"><div><p className="text-[10px] font-bold tracking-[0.14em] text-emerald-800 uppercase">{projectName}</p><h2 id="project-task-form-title" className="text-lg font-semibold">Add project task</h2></div><button type="button" onClick={closeCreateForm} disabled={isSubmitting} aria-label="Close task form" className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><X aria-hidden="true" className="size-5" /></button></div>
             <form onSubmit={saveTask} className="p-5">
               <div><label htmlFor="project-task-title" className="mb-1.5 block text-sm font-semibold">Task title</label><input id="project-task-title" autoFocus required maxLength={255} value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
               <div className="mt-4"><label htmlFor="project-task-description" className="mb-1.5 block text-sm font-semibold">Description <span className="font-normal text-slate-500">(optional)</span></label><textarea id="project-task-description" rows={4} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-28 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
+              <TaskAttributeFields idPrefix="project-task" tags={tags} onTagsChange={setTags} priority={priority} onPriorityChange={setPriority} />
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={closeCreateForm} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button><button type="submit" disabled={isSubmitting || !title.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}{isSubmitting ? "Saving..." : "Add task"}</button></div>
             </form>
           </section>
@@ -309,6 +362,11 @@ const ProjectTaskList = ({ projectId, projectName }) => {
                   <textarea id="edit-project-task-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, notes, or a definition of done" maxLength={1000} className="min-h-52 w-full resize-y rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
                   <p className="mt-1.5 text-right text-xs text-slate-500">{description.length}/1000</p>
                 </div>
+                <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={setTags} priority={priority} onPriorityChange={setPriority} />
+                <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
+                  <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>
+                  <div className="flex items-center gap-2"><RefreshCw aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Updated by</dt><dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd></div>
+                </dl>
               </div>
               <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
                 <button type="button" onClick={closeEditDrawer} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>

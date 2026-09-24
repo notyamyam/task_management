@@ -13,12 +13,24 @@ import {
   RefreshCw,
   Save,
   Trash2,
+  UserRound,
   X,
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { Link, useOutletContext } from "react-router-dom";
 
 import { ENDPOINTS, instance } from "./api";
+import {
+  PriorityBadge,
+  TaskAttributeFields,
+  TaskTags,
+} from "./TaskAttributes";
+import {
+  getTaskUserName,
+  parseTaskTags,
+  taskTagsToInput,
+  validateTaskTags,
+} from "./taskUtils";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -42,12 +54,16 @@ const Task = () => {
   const [inputTask, setInputTask] = useState("");
   const [inputDescription, setInputDescription] = useState("");
   const [inputProjectId, setInputProjectId] = useState("");
+  const [inputTags, setInputTags] = useState("");
+  const [inputPriority, setInputPriority] = useState("medium");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editable, setEditable] = useState(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editProjectId, setEditProjectId] = useState("");
+  const [editTags, setEditTags] = useState("");
+  const [editPriority, setEditPriority] = useState("medium");
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -103,6 +119,12 @@ const Task = () => {
     event.preventDefault();
     const title = inputTask.trim();
     if (!title || !inputProjectId) return;
+    const tags = parseTaskTags(inputTags);
+    const tagsError = validateTaskTags(tags);
+    if (tagsError) {
+      toast.error(tagsError);
+      return;
+    }
 
     setIsAdding(true);
     try {
@@ -110,11 +132,15 @@ const Task = () => {
         title,
         description: inputDescription.trim() || null,
         project_id: Number(inputProjectId),
+        tags,
+        priority: inputPriority,
       });
       setTasks((current) => [response.data, ...current]);
       setInputTask("");
       setInputDescription("");
       setInputProjectId("");
+      setInputTags("");
+      setInputPriority("medium");
       setIsAddModalOpen(false);
       onFilterChange("all");
     } catch (error) {
@@ -129,6 +155,8 @@ const Task = () => {
     setInputTask("");
     setInputDescription("");
     setInputProjectId("");
+    setInputTags("");
+    setInputPriority("medium");
     setIsAddModalOpen(false);
   };
 
@@ -139,6 +167,8 @@ const Task = () => {
     setEditTitle(task.title);
     setEditDescription(task.description ?? "");
     setEditProjectId(task.project_id ? String(task.project_id) : "");
+    setEditTags(taskTagsToInput(task.tags));
+    setEditPriority(task.priority || "medium");
   };
 
   const finishClosingEditor = () => {
@@ -147,6 +177,8 @@ const Task = () => {
     setEditTitle("");
     setEditDescription("");
     setEditProjectId("");
+    setEditTags("");
+    setEditPriority("medium");
   };
 
   const animateEditorClosed = () => {
@@ -170,6 +202,12 @@ const Task = () => {
       toast.error("Select a project for this task.");
       return;
     }
+    const tags = parseTaskTags(editTags);
+    const tagsError = validateTaskTags(tags);
+    if (tagsError) {
+      toast.error(tagsError);
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -178,6 +216,8 @@ const Task = () => {
         description: editDescription.trim() || null,
         completed: task.completed,
         project_id: Number(editProjectId),
+        tags,
+        priority: editPriority,
       });
       setTasks((current) =>
         current.map((item) => (item.id === task.id ? response.data : item)),
@@ -198,6 +238,8 @@ const Task = () => {
         description: task.description,
         completed: !task.completed,
         project_id: task.project_id,
+        tags: task.tags || [],
+        priority: task.priority || "medium",
       });
       setTasks((current) =>
         current.map((item) => (item.id === task.id ? response.data : item)),
@@ -321,6 +363,10 @@ const Task = () => {
                           {task.description}
                         </p>
                       ) : null}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <PriorityBadge priority={task.priority} />
+                        <TaskTags tags={task.tags} />
+                      </div>
                       <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
                         <FolderKanban aria-hidden="true" className="size-3.5" />
                         {task.project_name || "Unassigned legacy task"}
@@ -329,14 +375,14 @@ const Task = () => {
 
                     <dl className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-slate-500 lg:flex-row lg:gap-4">
                       <div className="flex items-center gap-1.5">
-                        <CalendarClock aria-hidden="true" className="size-3.5 flex-none" />
+                        <UserRound aria-hidden="true" className="size-3.5 flex-none" />
                         <dt className="sr-only">Created</dt>
-                        <dd>Created {formatDateTime(task.created_at)}</dd>
+                        <dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <RefreshCw aria-hidden="true" className="size-3.5 flex-none" />
                         <dt className="sr-only">Updated</dt>
-                        <dd>Updated {formatDateTime(task.updated_at)}</dd>
+                        <dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd>
                       </div>
                     </dl>
                   </div>
@@ -367,7 +413,7 @@ const Task = () => {
             if (event.key === "Escape") closeAddModal();
           }}
         >
-          <div role="dialog" aria-modal="true" aria-labelledby="add-task-modal-title" className="w-full max-w-lg rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+          <div role="dialog" aria-modal="true" aria-labelledby="add-task-modal-title" className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
               <div>
                 <p className="text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">New task</p>
@@ -422,6 +468,14 @@ const Task = () => {
                   className="min-h-28 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
                 />
               </div>
+
+              <TaskAttributeFields
+                idPrefix="new-task"
+                tags={inputTags}
+                onTagsChange={setInputTags}
+                priority={inputPriority}
+                onPriorityChange={setInputPriority}
+              />
 
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={closeAddModal} disabled={isAdding} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
@@ -512,16 +566,24 @@ const Task = () => {
                     <p className="mt-1.5 text-right text-xs text-slate-500">{editDescription.length}/1000</p>
                   </div>
 
+                  <TaskAttributeFields
+                    idPrefix="edit-task"
+                    tags={editTags}
+                    onTagsChange={setEditTags}
+                    priority={editPriority}
+                    onPriorityChange={setEditPriority}
+                  />
+
                   <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
                     <div className="flex items-center gap-2">
                       <CalendarClock aria-hidden="true" className="size-4 flex-none" />
-                      <dt className="font-semibold text-slate-700">Created</dt>
-                      <dd>{formatDateTime(editingTask.created_at)}</dd>
+                      <dt className="font-semibold text-slate-700">Created by</dt>
+                      <dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd>
                     </div>
                     <div className="flex items-center gap-2">
                       <RefreshCw aria-hidden="true" className="size-4 flex-none" />
-                      <dt className="font-semibold text-slate-700">Updated</dt>
-                      <dd>{formatDateTime(editingTask.updated_at)}</dd>
+                      <dt className="font-semibold text-slate-700">Updated by</dt>
+                      <dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd>
                     </div>
                   </dl>
                 </div>

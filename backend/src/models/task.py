@@ -1,5 +1,7 @@
 from ..database import Base
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB
+
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -9,6 +11,9 @@ class Task(Base):
     description = Column(String)
     completed = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("users.id"))  # Foreign key to User model (assuming user_id is an integer)
+    updated_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    tags = Column(JSONB, nullable=False, default=list)
+    priority = Column(String(10), nullable=False, default="medium")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
