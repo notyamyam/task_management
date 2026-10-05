@@ -7,6 +7,7 @@ from ..schemas import TaskCreate
 from ..security import auth
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
+TAG_COLORS = {"slate", "emerald", "blue", "violet", "amber", "rose"}
 
 
 def get_current_complete_user(current_user=Depends(auth.get_current_user)):
@@ -46,6 +47,34 @@ def get_accessible_task(task_id, current_user, db):
     return task
 
 
+def get_accessible_tasks_query(current_user, db):
+    return (
+        db.query(Task)
+        .outerjoin(Project, Project.id == Task.project_id)
+        .outerjoin(ProjectMember, ProjectMember.project_id == Project.id)
+        .filter(
+            or_(
+                and_(Task.project_id.is_(None), Task.user_id == current_user.id),
+                Project.user_id == current_user.id,
+                ProjectMember.user_id == current_user.id,
+            )
+        )
+    )
+
+
+def serialize_tags(stored_tags):
+    tags = []
+    for tag in stored_tags or []:
+        if isinstance(tag, str):
+            tags.append({"name": tag, "color": "slate"})
+        elif isinstance(tag, dict) and isinstance(tag.get("name"), str):
+            tags.append({
+                "name": tag["name"],
+                "color": tag.get("color") if tag.get("color") in TAG_COLORS else "slate",
+            })
+    return tags
+
+
 def serialize_task(task, db):
     project = None
     if task.project_id is not None:
@@ -73,7 +102,7 @@ def serialize_task(task, db):
         "updated_by": serialize_user(updater),
         "project_id": task.project_id,
         "project_name": project.name if project else None,
-        "tags": task.tags or [],
+        "tags": serialize_tags(task.tags),
         "priority": task.priority,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
@@ -117,16 +146,32 @@ def get_tasks(
         get_accessible_project(project_id, current_user, db)
         query = query.filter(Task.project_id == project_id)
     else:
-        query = query.filter(
-            or_(
-                and_(Task.project_id.is_(None), Task.user_id == current_user.id),
-                Project.user_id == current_user.id,
-                ProjectMember.user_id == current_user.id,
-            )
-        )
+        query = get_accessible_tasks_query(current_user, db)
 
     tasks = query.order_by(Task.title.asc()).distinct().all()
     return [serialize_task(task, db) for task in tasks]
+
+
+@router.get("/tag-recommendations")
+def get_tag_recommendations(
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    tasks = (
+        get_accessible_tasks_query(current_user, db)
+        .order_by(Task.updated_at.desc(), Task.id.desc())
+        .distinct()
+        .all()
+    )
+    recommendations = []
+    seen = set()
+    for task in tasks:
+        for tag in serialize_tags(task.tags):
+            normalized_name = tag["name"].casefold()
+            if normalized_name not in seen:
+                seen.add(normalized_name)
+                recommendations.append(tag)
+    return recommendations
 
 
 @router.get("/get-task/{task_id}")

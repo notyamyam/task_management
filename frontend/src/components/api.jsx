@@ -11,6 +11,7 @@ export const ENDPOINTS = {
   CONFIRM_PASSWORD_RESET: () => "/users/password-reset/confirm",
   CREATE_TASK: () => "/tasks/create-task",
   GET_TASKS: (projectId) => projectId ? `/tasks/get-tasks?project_id=${projectId}` : "/tasks/get-tasks",
+  GET_TASK_TAG_RECOMMENDATIONS: () => "/tasks/tag-recommendations",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,
   DELETE_TASK: (id) => `/tasks/delete-task?id=${id}`,
   CREATE_PROJECT: () => "/projects/create-project",

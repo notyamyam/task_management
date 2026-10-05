@@ -9,9 +9,10 @@ import {
   TaskTags,
 } from "./TaskAttributes";
 import {
+  getTaskTagSuggestions,
   getTaskUserName,
-  parseTaskTags,
-  taskTagsToInput,
+  mergeTaskTagSuggestions,
+  normalizeTaskTags,
   validateTaskTags,
 } from "./taskUtils";
 
@@ -33,12 +34,13 @@ const getErrorMessage = (error, fallback) => {
 
 const ProjectTaskList = ({ projectId, projectName }) => {
   const [taskRequest, setTaskRequest] = useState({ projectId: null, tasks: [], error: "" });
+  const [savedTagSuggestions, setSavedTagSuggestions] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [isEditDrawerVisible, setIsEditDrawerVisible] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [tags, setTags] = useState("");
+  const [tags, setTags] = useState([]);
   const [priority, setPriority] = useState("medium");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
@@ -67,6 +69,20 @@ const ProjectTaskList = ({ projectId, projectName }) => {
   }, [projectId]);
 
   useEffect(() => {
+    let isCurrent = true;
+
+    instance.get(ENDPOINTS.GET_TASK_TAG_RECOMMENDATIONS())
+      .then((response) => {
+        if (isCurrent) setSavedTagSuggestions(normalizeTaskTags(response.data));
+      })
+      .catch(() => {
+        // Loaded project tasks still provide local recommendations if this request fails.
+      });
+
+    return () => { isCurrent = false; };
+  }, []);
+
+  useEffect(() => {
     if (!editingTask) return undefined;
 
     const animationFrame = window.requestAnimationFrame(() => setIsEditDrawerVisible(true));
@@ -82,7 +98,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(null);
     setTitle("");
     setDescription("");
-    setTags("");
+    setTags([]);
     setPriority("medium");
     setIsCreateFormOpen(true);
   };
@@ -93,7 +109,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(task);
     setTitle(task.title);
     setDescription(task.description || "");
-    setTags(taskTagsToInput(task.tags));
+    setTags(normalizeTaskTags(task.tags));
     setPriority(task.priority || "medium");
   };
 
@@ -102,7 +118,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setIsCreateFormOpen(false);
     setTitle("");
     setDescription("");
-    setTags("");
+    setTags([]);
     setPriority("medium");
   };
 
@@ -111,7 +127,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setEditingTask(null);
     setTitle("");
     setDescription("");
-    setTags("");
+    setTags([]);
     setPriority("medium");
   };
 
@@ -129,8 +145,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     event.preventDefault();
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
-    const parsedTags = parseTaskTags(tags);
-    const tagsError = validateTaskTags(parsedTags);
+    const tagsError = validateTaskTags(tags);
     if (tagsError) {
       toast.error(tagsError);
       return;
@@ -142,7 +157,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
       description: description.trim() || null,
       completed: editingTask?.completed || false,
       project_id: Number(projectId),
-      tags: parsedTags,
+      tags,
       priority,
     };
 
@@ -156,6 +171,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
           ? current.tasks.map((task) => task.id === editingTask.id ? response.data : task)
           : [response.data, ...current.tasks],
       }));
+      setSavedTagSuggestions((current) => mergeTaskTagSuggestions(current, response.data.tags));
       toast.success(editingTask ? "Task updated." : "Task added to the project.");
       if (editingTask) {
         animateEditDrawerClosed();
@@ -163,7 +179,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
         setIsCreateFormOpen(false);
         setTitle("");
         setDescription("");
-        setTags("");
+        setTags([]);
         setPriority("medium");
       }
     } catch (error) {
@@ -259,6 +275,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
   };
 
   const openCount = tasks.filter((task) => !task.completed).length;
+  const tagSuggestions = mergeTaskTagSuggestions(getTaskTagSuggestions(tasks), savedTagSuggestions);
 
   return (
     <>
@@ -312,7 +329,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
             <form onSubmit={saveTask} className="p-5">
               <div><label htmlFor="project-task-title" className="mb-1.5 block text-sm font-semibold">Task title</label><input id="project-task-title" autoFocus required maxLength={255} value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
               <div className="mt-4"><label htmlFor="project-task-description" className="mb-1.5 block text-sm font-semibold">Description <span className="font-normal text-slate-500">(optional)</span></label><textarea id="project-task-description" rows={4} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-28 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
-              <TaskAttributeFields idPrefix="project-task" tags={tags} onTagsChange={setTags} priority={priority} onPriorityChange={setPriority} />
+              <TaskAttributeFields idPrefix="project-task" tags={tags} onTagsChange={setTags} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={setPriority} />
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={closeCreateForm} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button><button type="submit" disabled={isSubmitting || !title.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}{isSubmitting ? "Saving..." : "Add task"}</button></div>
             </form>
           </section>
@@ -362,7 +379,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
                   <textarea id="edit-project-task-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, notes, or a definition of done" maxLength={1000} className="min-h-52 w-full resize-y rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
                   <p className="mt-1.5 text-right text-xs text-slate-500">{description.length}/1000</p>
                 </div>
-                <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={setTags} priority={priority} onPriorityChange={setPriority} />
+                <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={setTags} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={setPriority} />
                 <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
                   <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>
                   <div className="flex items-center gap-2"><RefreshCw aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Updated by</dt><dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd></div>
