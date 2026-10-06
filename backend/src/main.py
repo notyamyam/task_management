@@ -3,11 +3,13 @@ from .routers import ai, project, task, user
 from .database import Base, engine, migrate_existing_schema
 from fastapi.middleware.cors import CORSMiddleware
 from .models import Project, ProjectMember, Task
+from .security.config import settings
 
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.frontend_url.rstrip("/")],
+    # allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

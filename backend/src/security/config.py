@@ -1,7 +1,13 @@
 from pydantic import AliasChoices, Field
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        env_ignore_empty=True,
+    )
+
     database_url: str
     secret_key: str
     algorithm: str
@@ -11,6 +17,7 @@ class Settings(BaseSettings):
     )
     access_token_expire_minutes: int = 30
     password_reset_otp_secret: str = ""
+    frontend_url: str = "http://localhost:5173"
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
@@ -22,9 +29,5 @@ class Settings(BaseSettings):
     ai_base_url: str = "https://api.openai.com/v1"
     ai_model: str = ""
     ai_timeout_seconds: int = 45
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
 
 settings = Settings()
