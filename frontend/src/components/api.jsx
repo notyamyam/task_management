@@ -27,6 +27,8 @@ export const ENDPOINTS = {
   GOOGLE_LOGIN: () => "/users/google",
 };
 
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
 export const instance = axios.create({
   // baseURL: `"http://localhost:8000/"`,
   baseURL: `${apiBaseUrl.replace(/\/+$/, "")}/`,
