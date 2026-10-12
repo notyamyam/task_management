@@ -11,8 +11,10 @@ export const ENDPOINTS = {
   CONFIRM_PASSWORD_RESET: () => "/users/password-reset/confirm",
   CREATE_TASK: () => "/tasks/create-task",
   GET_TASKS: (projectId) => projectId ? `/tasks/get-tasks?project_id=${projectId}` : "/tasks/get-tasks",
+  GET_MY_TASKS: () => "/tasks/my-tasks",
   GET_TASK_TAG_RECOMMENDATIONS: () => "/tasks/tag-recommendations",
   UPDATE_TASK: (id) => `/tasks/update-task?id=${id}`,
+  UPDATE_TASK_STATUS: (id) => `/tasks/update-status?id=${id}`,
   DELETE_TASK: (id) => `/tasks/delete-task?id=${id}`,
   CREATE_PROJECT: () => "/projects/create-project",
   GET_PROJECTS: () => "/projects/get-projects",
@@ -30,7 +32,6 @@ export const ENDPOINTS = {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 export const instance = axios.create({
-  // baseURL: `"http://localhost:8000/"`,
   baseURL: `${apiBaseUrl.replace(/\/+$/, "")}/`,
 });
 

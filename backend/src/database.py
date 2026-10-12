@@ -143,8 +143,63 @@ def migrate_existing_schema():
                 connection.execute(text(
                     "UPDATE tasks SET updated_by_user_id = user_id"
                 ))
+            if "due_date" not in task_columns:
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN due_date DATE"
+                ))
+            if "assignee_user_id" not in task_columns:
+                user_reference = (
+                    " REFERENCES users(id) ON DELETE SET NULL"
+                    if "users" in tables
+                    else ""
+                )
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN assignee_user_id "
+                    f"INTEGER{user_reference}"
+                ))
+            if "status" not in task_columns:
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD COLUMN status VARCHAR(20) "
+                    "NOT NULL DEFAULT 'backlog'"
+                ))
+                connection.execute(text(
+                    "UPDATE tasks SET status = 'done' WHERE completed IS TRUE"
+                ))
+
+            connection.execute(text(
+                "UPDATE tasks SET status = CASE "
+                "WHEN completed IS TRUE THEN 'done' ELSE 'backlog' END "
+                "WHERE status IS NULL OR status NOT IN "
+                "('backlog', 'in_progress', 'blocked', 'done')"
+            ))
+            connection.execute(text(
+                "ALTER TABLE tasks ALTER COLUMN status SET DEFAULT 'backlog'"
+            ))
+            connection.execute(text(
+                "ALTER TABLE tasks ALTER COLUMN status SET NOT NULL"
+            ))
+
+            check_names = {
+                constraint.get("name")
+                for constraint in inspect(connection).get_check_constraints("tasks")
+            }
+            if "ck_tasks_status" not in check_names:
+                connection.execute(text(
+                    "ALTER TABLE tasks ADD CONSTRAINT ck_tasks_status CHECK "
+                    "(status IN ('backlog', 'in_progress', 'blocked', 'done'))"
+                ))
             connection.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_tasks_project_id ON tasks (project_id)"
+            ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_due_date ON tasks (due_date)"
+            ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_assignee_user_id "
+                "ON tasks (assignee_user_id)"
+            ))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks (status)"
             ))
 
 def get_db():

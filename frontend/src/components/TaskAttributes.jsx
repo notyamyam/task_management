@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { Check, Flag, Palette, Tag, X } from "lucide-react";
+import { CalendarDays, Check, Flag, Palette, Tag, UserRound, X } from "lucide-react";
 
 import { normalizeTaskTags } from "./taskUtils";
 
@@ -39,6 +39,27 @@ export const TaskTags = ({ tags = [] }) => {
     </ul>
   ) : null;
 };
+
+const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+
+export const StatusBadge = ({ status = "backlog" }) => {
+  const labels = { backlog: "Backlog", in_progress: "In Progress", blocked: "Blocked", done: "Done" };
+  const styles = { backlog: "border-slate-200 bg-slate-100 text-slate-700", in_progress: "border-blue-200 bg-blue-50 text-blue-800", blocked: "border-amber-200 bg-amber-50 text-amber-800", done: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  return <span className={`inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-bold ${styles[status] || styles.backlog}`}>{labels[status] || labels.backlog}</span>;
+};
+
+export const DueDateBadge = ({ dueDate, state }) => {
+  if (!dueDate) return null;
+  const date = new Date(`${dueDate}T12:00:00`);
+  const label = Number.isNaN(date.getTime()) ? dueDate : DATE_FORMATTER.format(date);
+  const style = state === "overdue" ? "border-red-200 bg-red-50 text-red-800" : state === "today" ? "border-amber-200 bg-amber-50 text-amber-900" : state === "approaching" ? "border-blue-200 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600";
+  const prefix = state === "overdue" ? "Overdue" : state === "today" ? "Due today" : "Due";
+  return <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${style}`}><CalendarDays aria-hidden="true" className="size-3" />{prefix} {label}</span>;
+};
+
+export const AssigneeBadge = ({ assignee }) => assignee ? (
+  <span className="inline-flex items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-bold text-violet-800"><UserRound aria-hidden="true" className="size-3" />{`${assignee.first_name || ""} ${assignee.last_name || ""}`.trim() || assignee.email}</span>
+) : <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-500"><UserRound aria-hidden="true" className="size-3" />Unassigned</span>;
 
 const TaskTagInput = ({ id, tags, onChange, suggestions = [] }) => {
   const [query, setQuery] = useState("");
@@ -152,4 +173,27 @@ export const TaskAttributeFields = ({ idPrefix, tags, onTagsChange, tagSuggestio
       </div>
     </fieldset>
   </>
+);
+
+export const TaskPlanningFields = ({ idPrefix, dueDate, onDueDateChange, status, onStatusChange, assigneeId, onAssigneeChange, members = [], isMembersLoading = false }) => (
+  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+    <div>
+      <label htmlFor={`${idPrefix}-due-date`} className="mb-1.5 block text-sm font-semibold text-slate-800">Due date <span className="font-normal text-slate-500">(optional)</span></label>
+      <input id={`${idPrefix}-due-date`} type="date" value={dueDate} onChange={(event) => onDueDateChange(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
+    </div>
+    <div>
+      <label htmlFor={`${idPrefix}-status`} className="mb-1.5 block text-sm font-semibold text-slate-800">Status</label>
+      <select id={`${idPrefix}-status`} value={status} onChange={(event) => onStatusChange(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15">
+        <option value="backlog">Backlog</option><option value="in_progress">In Progress</option><option value="blocked">Blocked</option><option value="done">Done</option>
+      </select>
+    </div>
+    <div className="sm:col-span-2">
+      <label htmlFor={`${idPrefix}-assignee`} className="mb-1.5 block text-sm font-semibold text-slate-800">Assignee <span className="font-normal text-slate-500">(optional)</span></label>
+      <select id={`${idPrefix}-assignee`} value={assigneeId} disabled={isMembersLoading} onChange={(event) => onAssigneeChange(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15 disabled:cursor-wait disabled:bg-slate-100">
+        <option value="">{isMembersLoading ? "Loading project members..." : "Unassigned"}</option>
+        {members.map((member) => <option key={member.id} value={member.id}>{`${member.first_name || ""} ${member.last_name || ""}`.trim() || member.email}</option>)}
+      </select>
+      {!isMembersLoading && members.length === 0 ? <p className="mt-1.5 text-xs text-slate-500">Choose a project to load its members.</p> : null}
+    </div>
+  </div>
 );

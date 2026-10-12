@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Circle, FileDown, ListTodo, LoaderCircle, Pencil, Plus, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
+import { Check, Circle, Columns3, FileDown, List, ListTodo, LoaderCircle, Pencil, Plus, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
 import {
+  AssigneeBadge,
+  DueDateBadge,
   PriorityBadge,
+  StatusBadge,
   TaskAttributeFields,
+  TaskPlanningFields,
   TaskTags,
 } from "./TaskAttributes";
+import TaskBoard from "./TaskBoard";
+import { buildTaskPayload, getDueDateState, getTaskAssignee, normalizeTaskStatus } from "./taskPlanning";
 import {
   getTaskTagSuggestions,
   getTaskUserName,
@@ -32,7 +38,7 @@ const getErrorMessage = (error, fallback) => {
   return typeof detail === "string" ? detail : fallback;
 };
 
-const ProjectTaskList = ({ projectId, projectName }) => {
+const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user" }) => {
   const [taskRequest, setTaskRequest] = useState({ projectId: null, tasks: [], error: "" });
   const [savedTagSuggestions, setSavedTagSuggestions] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
@@ -42,6 +48,11 @@ const ProjectTaskList = ({ projectId, projectName }) => {
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState([]);
   const [priority, setPriority] = useState("medium");
+  const [dueDate, setDueDate] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [status, setStatus] = useState("backlog");
+  const [view, setView] = useState(() => localStorage.getItem(`project-task-view:${userKey}`) || "list");
+  const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -100,6 +111,9 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setDescription("");
     setTags([]);
     setPriority("medium");
+    setDueDate("");
+    setAssigneeId("");
+    setStatus("backlog");
     setIsCreateFormOpen(true);
   };
 
@@ -111,6 +125,9 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setDescription(task.description || "");
     setTags(normalizeTaskTags(task.tags));
     setPriority(task.priority || "medium");
+    setDueDate(task.due_date || "");
+    setAssigneeId(String(task.assignee_user_id ?? getTaskAssignee(task)?.id ?? ""));
+    setStatus(normalizeTaskStatus(task));
   };
 
   const closeCreateForm = () => {
@@ -120,6 +137,9 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setDescription("");
     setTags([]);
     setPriority("medium");
+    setDueDate("");
+    setAssigneeId("");
+    setStatus("backlog");
   };
 
   const finishClosingEditDrawer = () => {
@@ -129,6 +149,9 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     setDescription("");
     setTags([]);
     setPriority("medium");
+    setDueDate("");
+    setAssigneeId("");
+    setStatus("backlog");
   };
 
   const animateEditDrawerClosed = () => {
@@ -152,14 +175,21 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     }
 
     setIsSubmitting(true);
-    const payload = {
+    if (assigneeId && !members.some((member) => Number(member.id) === Number(assigneeId))) {
+      toast.error("Choose an assignee who belongs to this project.");
+      setIsSubmitting(false);
+      return;
+    }
+    const payload = buildTaskPayload(editingTask || { title: cleanTitle, project_id: projectId }, {
       title: cleanTitle,
       description: description.trim() || null,
-      completed: editingTask?.completed || false,
       project_id: Number(projectId),
       tags,
       priority,
-    };
+      due_date: dueDate || null,
+      assignee_user_id: assigneeId ? Number(assigneeId) : null,
+      status,
+    });
 
     try {
       const response = editingTask
@@ -181,6 +211,9 @@ const ProjectTaskList = ({ projectId, projectName }) => {
         setDescription("");
         setTags([]);
         setPriority("medium");
+        setDueDate("");
+        setAssigneeId("");
+        setStatus("backlog");
       }
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't save the task."));
@@ -189,22 +222,18 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     }
   };
 
-  const toggleTask = async (task) => {
+  const updateStatus = async (task, nextStatus) => {
+    setUpdatingTaskId(task.id);
     try {
-      const response = await instance.put(ENDPOINTS.UPDATE_TASK(task.id), {
-        title: task.title,
-        description: task.description,
-        completed: !task.completed,
-        project_id: Number(projectId),
-        tags: task.tags || [],
-        priority: task.priority || "medium",
-      });
+      const response = await instance.patch(ENDPOINTS.UPDATE_TASK_STATUS(task.id), { status: nextStatus });
       setTaskRequest((current) => ({
         ...current,
         tasks: current.tasks.map((item) => item.id === task.id ? response.data : item),
       }));
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't update the task."));
+    } finally {
+      setUpdatingTaskId(null);
     }
   };
 
@@ -274,7 +303,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
     }
   };
 
-  const openCount = tasks.filter((task) => !task.completed).length;
+  const openCount = tasks.filter((task) => normalizeTaskStatus(task) !== "done").length;
   const tagSuggestions = mergeTaskTagSuggestions(getTaskTagSuggestions(tasks), savedTagSuggestions);
 
   return (
@@ -286,6 +315,10 @@ const ProjectTaskList = ({ projectId, projectName }) => {
             {!isLoading && !taskRequest.error ? <p className="mt-0.5 text-xs text-slate-500">{openCount} open, {tasks.length - openCount} completed</p> : null}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex rounded-lg border border-slate-300 bg-white p-1" aria-label="Project task layout">
+              <button type="button" onClick={() => { setView("list"); localStorage.setItem(`project-task-view:${userKey}`, "list"); }} aria-pressed={view === "list"} className={`grid size-9 cursor-pointer place-items-center rounded-md focus-visible:outline-3 focus-visible:outline-emerald-800 ${view === "list" ? "bg-[#173b35] text-white" : "text-slate-600 hover:bg-slate-100"}`}><List aria-hidden="true" className="size-4" /><span className="sr-only">List view</span></button>
+              <button type="button" onClick={() => { setView("board"); localStorage.setItem(`project-task-view:${userKey}`, "board"); }} aria-pressed={view === "board"} className={`grid size-9 cursor-pointer place-items-center rounded-md focus-visible:outline-3 focus-visible:outline-emerald-800 ${view === "board" ? "bg-[#173b35] text-white" : "text-slate-600 hover:bg-slate-100"}`}><Columns3 aria-hidden="true" className="size-4" /><span className="sr-only">Board view</span></button>
+            </div>
             <button type="button" onClick={generateReport} disabled={isGeneratingReport} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
               {isGeneratingReport ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <FileDown aria-hidden="true" className="size-4 text-emerald-800" />}
               {isGeneratingReport ? "Generating..." : "AI CSV report"}
@@ -300,15 +333,17 @@ const ProjectTaskList = ({ projectId, projectName }) => {
           <div className="grid min-h-40 place-items-center px-5 text-center"><div><p className="font-semibold">{taskRequest.error}</p><button type="button" onClick={retryTasks} className="mt-3 min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800">Try again</button></div></div>
         ) : tasks.length === 0 ? (
           <div className="grid min-h-44 place-items-center px-5 text-center"><div><ListTodo aria-hidden="true" className="mx-auto size-8 text-slate-400" /><p className="mt-3 font-semibold">No tasks in this project</p><p className="mt-1 text-sm text-slate-500">Add the first task for your project team.</p></div></div>
+        ) : view === "board" ? (
+          <div className="p-3"><TaskBoard tasks={tasks} onStatusChange={updateStatus} onEdit={openEditForm} onDelete={setTaskToDelete} updatingTaskId={updatingTaskId} /></div>
         ) : (
           <ul className="divide-y divide-slate-200">
             {tasks.map((task) => (
               <li key={task.id} className="flex min-h-16 items-start gap-2 px-2 py-2 sm:px-4">
-                <button type="button" onClick={() => toggleTask(task)} aria-label={task.completed ? `Mark ${task.title} as open` : `Mark ${task.title} as completed`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800">{task.completed ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
+                <button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
                 <div className="min-w-0 flex-1 py-2">
-                  <p className={`break-words text-sm font-semibold ${task.completed ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>
+                  <p className={`break-words text-sm font-semibold ${normalizeTaskStatus(task) === "done" ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>
                   {task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5"><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /></div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5"><StatusBadge status={normalizeTaskStatus(task)} /><DueDateBadge dueDate={task.due_date} state={getDueDateState(task)} /><AssigneeBadge assignee={getTaskAssignee(task)} /><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /></div>
                   <dl className="mt-2 flex flex-col gap-1 text-[11px] text-slate-500 xl:flex-row xl:gap-4">
                     <div className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Created by</dt><dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd></div>
                     <div className="flex items-center gap-1.5"><RefreshCw aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Updated by</dt><dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd></div>
@@ -329,6 +364,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
             <form onSubmit={saveTask} className="p-5">
               <div><label htmlFor="project-task-title" className="mb-1.5 block text-sm font-semibold">Task title</label><input id="project-task-title" autoFocus required maxLength={255} value={title} onChange={(event) => setTitle(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
               <div className="mt-4"><label htmlFor="project-task-description" className="mb-1.5 block text-sm font-semibold">Description <span className="font-normal text-slate-500">(optional)</span></label><textarea id="project-task-description" rows={4} maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} className="min-h-28 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
+              <TaskPlanningFields idPrefix="project-task" dueDate={dueDate} onDueDateChange={setDueDate} status={status} onStatusChange={setStatus} assigneeId={assigneeId} onAssigneeChange={setAssigneeId} members={members} />
               <TaskAttributeFields idPrefix="project-task" tags={tags} onTagsChange={setTags} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={setPriority} />
               <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={closeCreateForm} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button><button type="submit" disabled={isSubmitting || !title.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}{isSubmitting ? "Saving..." : "Add task"}</button></div>
             </form>
@@ -379,6 +415,7 @@ const ProjectTaskList = ({ projectId, projectName }) => {
                   <textarea id="edit-project-task-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, notes, or a definition of done" maxLength={1000} className="min-h-52 w-full resize-y rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
                   <p className="mt-1.5 text-right text-xs text-slate-500">{description.length}/1000</p>
                 </div>
+                <TaskPlanningFields idPrefix="edit-project-task" dueDate={dueDate} onDueDateChange={setDueDate} status={status} onStatusChange={setStatus} assigneeId={assigneeId} onAssigneeChange={setAssigneeId} members={members} />
                 <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={setTags} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={setPriority} />
                 <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
                   <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>

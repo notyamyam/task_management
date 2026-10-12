@@ -1,76 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  Check,
-  CheckCircle2,
-  CalendarClock,
-  Circle,
-  FolderKanban,
-  Inbox,
-  ListTodo,
-  LoaderCircle,
-  Pencil,
-  Plus,
-  RefreshCw,
-  Save,
-  Trash2,
-  UserRound,
-  X,
-} from "lucide-react";
+import { AlertTriangle, Check, Circle, Columns3, Inbox, List, LoaderCircle, Pencil, Plus, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { Link, useOutletContext } from "react-router-dom";
 
 import { ENDPOINTS, instance } from "./api";
-import { PriorityBadge, TaskAttributeFields, TaskTags } from "./TaskAttributes";
-import {
-  getTaskTagSuggestions,
-  getTaskUserName,
-  mergeTaskTagSuggestions,
-  normalizeTaskTags,
-  validateTaskTags,
-} from "./taskUtils";
+import TaskBoard from "./TaskBoard";
+import { AssigneeBadge, DueDateBadge, PriorityBadge, StatusBadge, TaskAttributeFields, TaskPlanningFields, TaskTags } from "./TaskAttributes";
+import { getTaskTagSuggestions, getTaskUserName, mergeTaskTagSuggestions, normalizeTaskTags, validateTaskTags } from "./taskUtils";
+import { buildTaskPayload, getDueDateState, getTaskAssignee, normalizeTaskStatus, sortTasksByDueDate, taskMatchesPlanningView } from "./taskPlanning";
 
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-const formatDateTime = (value) => {
-  if (!value) return "Not available";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "Not available"
-    : DATE_TIME_FORMATTER.format(date);
-};
-
-const getErrorMessage = (error, fallback) => {
-  const detail = error.response?.data?.detail;
-  return typeof detail === "string" ? detail : fallback;
-};
+const getErrorMessage = (error, fallback) => typeof error.response?.data?.detail === "string" ? error.response.data.detail : fallback;
+const emptyForm = { title: "", description: "", projectId: "", tags: [], priority: "medium", dueDate: "", assigneeId: "", status: "backlog" };
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+const formatDateTime = (value) => value && !Number.isNaN(new Date(value).getTime()) ? DATE_TIME_FORMATTER.format(new Date(value)) : "Not available";
 
 const Task = () => {
-  const { filter, onFilterChange, projects, isProjectsLoading } =
-    useOutletContext();
+  const { filter, profile, projects, isProjectsLoading } = useOutletContext();
   const [tasks, setTasks] = useState([]);
   const [savedTagSuggestions, setSavedTagSuggestions] = useState([]);
-  const [inputTask, setInputTask] = useState("");
-  const [inputDescription, setInputDescription] = useState("");
-  const [inputProjectId, setInputProjectId] = useState("");
-  const [inputTags, setInputTags] = useState([]);
-  const [inputPriority, setInputPriority] = useState("medium");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editable, setEditable] = useState(null);
-  const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [editTitle, setEditTitle] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editProjectId, setEditProjectId] = useState("");
-  const [editTags, setEditTags] = useState([]);
-  const [editPriority, setEditPriority] = useState("medium");
+  const [form, setForm] = useState(emptyForm);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [isEditorVisible, setIsEditorVisible] = useState(false);
   const [taskToDelete, setTaskToDelete] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAdding, setIsAdding] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [updatingTaskId, setUpdatingTaskId] = useState(null);
   const [loadError, setLoadError] = useState("");
-  const editorCloseTimer = useRef(null);
+  const [dueFilter, setDueFilter] = useState("any");
+  const [dueSort, setDueSort] = useState("none");
+  const [membersRequest, setMembersRequest] = useState({ projectId: "", members: [], loading: false });
+  const [view, setView] = useState(() => localStorage.getItem(`task-view:${profile?.id ?? profile?.email ?? "user"}`) || "list");
+  const editorTimer = useRef(null);
+  const memberRequestId = useRef(0);
 
   const loadTasks = async () => {
     setIsLoading(true);
@@ -86,812 +48,209 @@ const Task = () => {
   };
 
   useEffect(() => {
-    let isCurrent = true;
-
-    instance
-      .get(ENDPOINTS.GET_TASKS())
-      .then((response) => {
-        if (isCurrent) setTasks(response.data);
-      })
-      .catch((error) => {
-        if (isCurrent) {
-          setLoadError(getErrorMessage(error, "We couldn't load your tasks."));
-        }
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    instance
-      .get(ENDPOINTS.GET_TASK_TAG_RECOMMENDATIONS())
-      .then((response) => {
-        if (isCurrent) setSavedTagSuggestions(normalizeTaskTags(response.data));
-      })
-      .catch(() => {
-        // Loaded tasks still provide local recommendations if this request fails.
-      });
-
-    return () => {
-      isCurrent = false;
-    };
+    let current = true;
+    Promise.allSettled([
+      instance.get(ENDPOINTS.GET_TASKS()),
+      instance.get(ENDPOINTS.GET_TASK_TAG_RECOMMENDATIONS()),
+    ]).then(([taskResult, tagResult]) => {
+      if (!current) return;
+      if (taskResult.status === "fulfilled") setTasks(taskResult.value.data);
+      else setLoadError(getErrorMessage(taskResult.reason, "We couldn't load your tasks."));
+      if (tagResult.status === "fulfilled") setSavedTagSuggestions(normalizeTaskTags(tagResult.value.data));
+      setIsLoading(false);
+    });
+    return () => { current = false; };
   }, []);
 
-  useEffect(() => {
-    if (editable === null) return undefined;
+  useEffect(() => () => window.clearTimeout(editorTimer.current), []);
 
-    const animationFrame = window.requestAnimationFrame(() =>
-      setIsEditorOpen(true),
-    );
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [editable]);
+  const changeView = (nextView) => {
+    setView(nextView);
+    localStorage.setItem(`task-view:${profile?.id ?? profile?.email ?? "user"}`, nextView);
+  };
 
-  useEffect(() => () => window.clearTimeout(editorCloseTimer.current), []);
-
-  const addTask = async (event) => {
-    event.preventDefault();
-    const title = inputTask.trim();
-    if (!title || !inputProjectId) return;
-    const tagsError = validateTaskTags(inputTags);
-    if (tagsError) {
-      toast.error(tagsError);
+  const loadProjectMembers = async (projectId, selectedAssigneeId = "") => {
+    const requestId = memberRequestId.current + 1;
+    memberRequestId.current = requestId;
+    if (!projectId) {
+      setMembersRequest({ projectId: "", members: [], loading: false });
+      setForm((current) => ({ ...current, projectId: "", assigneeId: "" }));
       return;
     }
-
-    setIsAdding(true);
+    setForm((current) => ({ ...current, projectId: String(projectId), assigneeId: selectedAssigneeId }));
+    setMembersRequest({ projectId: String(projectId), members: [], loading: true });
     try {
-      const response = await instance.post(ENDPOINTS.CREATE_TASK(), {
-        title,
-        description: inputDescription.trim() || null,
-        project_id: Number(inputProjectId),
-        tags: inputTags,
-        priority: inputPriority,
-      });
-      setTasks((current) => [response.data, ...current]);
-      setSavedTagSuggestions((current) =>
-        mergeTaskTagSuggestions(current, response.data.tags),
-      );
-      setInputTask("");
-      setInputDescription("");
-      setInputProjectId("");
-      setInputTags([]);
-      setInputPriority("medium");
-      setIsAddModalOpen(false);
-      onFilterChange("all");
+      const response = await instance.get(ENDPOINTS.GET_PROJECT(projectId));
+      if (memberRequestId.current !== requestId) return;
+      const members = [response.data.owner, ...(response.data.members || [])].filter(Boolean);
+      setMembersRequest({ projectId: String(projectId), members, loading: false });
+      if (selectedAssigneeId && !members.some((member) => Number(member.id) === Number(selectedAssigneeId))) {
+        setForm((current) => ({ ...current, assigneeId: "" }));
+      }
     } catch (error) {
-      toast.error(getErrorMessage(error, "Couldn't add the task."));
-    } finally {
-      setIsAdding(false);
+      if (memberRequestId.current !== requestId) return;
+      setMembersRequest({ projectId: String(projectId), members: [], loading: false });
+      toast.error(getErrorMessage(error, "Couldn't load project members."));
     }
   };
 
-  const closeAddModal = () => {
-    if (isAdding) return;
-    setInputTask("");
-    setInputDescription("");
-    setInputProjectId("");
-    setInputTags([]);
-    setInputPriority("medium");
-    setIsAddModalOpen(false);
+  const resetForm = () => {
+    setForm(emptyForm);
+    setMembersRequest({ projectId: "", members: [], loading: false });
   };
 
-  const startEditing = (task) => {
-    window.clearTimeout(editorCloseTimer.current);
-    setIsEditorOpen(false);
-    setEditable(task.id);
-    setEditTitle(task.title);
-    setEditDescription(task.description ?? "");
-    setEditProjectId(task.project_id ? String(task.project_id) : "");
-    setEditTags(normalizeTaskTags(task.tags));
-    setEditPriority(task.priority || "medium");
+  const openCreate = () => {
+    resetForm();
+    setIsCreateOpen(true);
   };
 
-  const finishClosingEditor = () => {
-    window.clearTimeout(editorCloseTimer.current);
-    setEditable(null);
-    setEditTitle("");
-    setEditDescription("");
-    setEditProjectId("");
-    setEditTags([]);
-    setEditPriority("medium");
+  const closeCreate = () => {
+    if (isSubmitting) return;
+    setIsCreateOpen(false);
+    resetForm();
   };
 
-  const animateEditorClosed = () => {
-    setIsEditorOpen(false);
-    editorCloseTimer.current = window.setTimeout(finishClosingEditor, 300);
+  const openEditor = (task) => {
+    window.clearTimeout(editorTimer.current);
+    setForm({
+      title: task.title,
+      description: task.description || "",
+      projectId: String(task.project_id || ""),
+      tags: normalizeTaskTags(task.tags),
+      priority: task.priority || "medium",
+      dueDate: task.due_date || "",
+      assigneeId: String(task.assignee_user_id ?? getTaskAssignee(task)?.id ?? ""),
+      status: normalizeTaskStatus(task),
+    });
+    setEditingId(task.id);
+    setIsEditorVisible(false);
+    if (task.project_id) loadProjectMembers(task.project_id, String(task.assignee_user_id ?? getTaskAssignee(task)?.id ?? ""));
+    window.requestAnimationFrame(() => setIsEditorVisible(true));
   };
 
   const closeEditor = () => {
-    if (isSaving) return;
-    animateEditorClosed();
+    if (isSubmitting) return;
+    setIsEditorVisible(false);
+    editorTimer.current = window.setTimeout(() => { setEditingId(null); resetForm(); }, 300);
   };
 
-  const saveTask = async (event, task) => {
+  const saveTask = async (event) => {
     event.preventDefault();
-    const title = editTitle.trim();
-    if (!title) {
-      toast.error("Task title cannot be empty.");
-      return;
-    }
-    if (!editProjectId) {
-      toast.error("Select a project for this task.");
-      return;
-    }
-    const tagsError = validateTaskTags(editTags);
-    if (tagsError) {
-      toast.error(tagsError);
-      return;
-    }
-
-    setIsSaving(true);
+    const tagsError = validateTaskTags(form.tags);
+    if (tagsError) return toast.error(tagsError);
+    const selectedAssigneeIsMember = !form.assigneeId || membersRequest.members.some((member) => Number(member.id) === Number(form.assigneeId));
+    if (!selectedAssigneeIsMember) return toast.error("Choose an assignee who belongs to this project.");
+    const payload = buildTaskPayload({ title: form.title.trim(), project_id: form.projectId }, {
+      description: form.description.trim() || null,
+      tags: form.tags,
+      priority: form.priority,
+      due_date: form.dueDate || null,
+      assignee_user_id: form.assigneeId ? Number(form.assigneeId) : null,
+      status: form.status,
+    });
+    setIsSubmitting(true);
     try {
-      const response = await instance.put(ENDPOINTS.UPDATE_TASK(task.id), {
-        title,
-        description: editDescription.trim() || null,
-        completed: task.completed,
-        project_id: Number(editProjectId),
-        tags: editTags,
-        priority: editPriority,
-      });
-      setTasks((current) =>
-        current.map((item) => (item.id === task.id ? response.data : item)),
-      );
-      setSavedTagSuggestions((current) =>
-        mergeTaskTagSuggestions(current, response.data.tags),
-      );
-      animateEditorClosed();
-      toast.success("Task updated.");
+      const response = editingId
+        ? await instance.put(ENDPOINTS.UPDATE_TASK(editingId), payload)
+        : await instance.post(ENDPOINTS.CREATE_TASK(), payload);
+      setTasks((current) => editingId ? current.map((task) => task.id === editingId ? response.data : task) : [response.data, ...current]);
+      setSavedTagSuggestions((current) => mergeTaskTagSuggestions(current, response.data.tags));
+      toast.success(editingId ? "Task updated." : "Task added.");
+      setIsSubmitting(false);
+      if (editingId) closeEditor(); else closeCreate();
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't save the task."));
     } finally {
-      setIsSaving(false);
+      setIsSubmitting(false);
     }
   };
 
-  const completeTask = async (task) => {
+  const updateStatus = async (task, status) => {
+    setUpdatingTaskId(task.id);
     try {
-      const response = await instance.put(ENDPOINTS.UPDATE_TASK(task.id), {
-        title: task.title,
-        description: task.description,
-        completed: !task.completed,
-        project_id: task.project_id,
-        tags: task.tags || [],
-        priority: task.priority || "medium",
-      });
-      setTasks((current) =>
-        current.map((item) => (item.id === task.id ? response.data : item)),
-      );
+      const response = await instance.patch(ENDPOINTS.UPDATE_TASK_STATUS(task.id), { status });
+      setTasks((current) => current.map((item) => item.id === task.id ? response.data : item));
+      toast.success(`Moved “${task.title}” to ${status.replace("_", " ")}.`);
     } catch (error) {
-      toast.error(getErrorMessage(error, "Couldn't update the task."));
+      toast.error(getErrorMessage(error, "Couldn't update the task status."));
+    } finally {
+      setUpdatingTaskId(null);
     }
   };
 
   const deleteTask = async () => {
     if (!taskToDelete) return;
-
     try {
       await instance.delete(ENDPOINTS.DELETE_TASK(taskToDelete.id));
-      setTasks((current) =>
-        current.filter((task) => task.id !== taskToDelete.id),
-      );
-      if (editable === taskToDelete.id) setEditable(null);
+      setTasks((current) => current.filter((task) => task.id !== taskToDelete.id));
       setTaskToDelete(null);
+      toast.success("Task deleted.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't delete the task."));
     }
   };
 
-  let completedCount = 0;
-  for (const task of tasks) {
-    if (task.completed) completedCount += 1;
-  }
-  const openCount = tasks.length - completedCount;
-  const visibleTasks = tasks.filter((task) => {
-    if (filter === "open") return !task.completed;
-    if (filter === "completed") return task.completed;
-    return true;
-  });
-  const editingTask = tasks.find((task) => task.id === editable);
-  const tagSuggestions = mergeTaskTagSuggestions(
-    getTaskTagSuggestions(tasks),
-    savedTagSuggestions,
+  const completedCount = tasks.filter((task) => normalizeTaskStatus(task) === "done").length;
+  const overdueCount = tasks.filter((task) => getDueDateState(task) === "overdue").length;
+  let visibleTasks = tasks.filter((task) => taskMatchesPlanningView(task, filter, profile?.id));
+  if (dueFilter === "dated") visibleTasks = visibleTasks.filter((task) => Boolean(task.due_date));
+  if (dueFilter === "undated") visibleTasks = visibleTasks.filter((task) => !task.due_date);
+  visibleTasks = sortTasksByDueDate(visibleTasks, dueSort);
+  const editingTask = tasks.find((task) => task.id === editingId);
+  const tagSuggestions = mergeTaskTagSuggestions(getTaskTagSuggestions(tasks), savedTagSuggestions);
+  const viewLabels = { all: "All tasks", my: "My Tasks", today: "Today", upcoming: "Upcoming", overdue: "Overdue", open: "Open tasks", completed: "Completed tasks" };
+
+  const planningFields = <TaskPlanningFields idPrefix={editingId ? "edit-task" : "new-task"} dueDate={form.dueDate} onDueDateChange={(dueDate) => setForm((current) => ({ ...current, dueDate }))} status={form.status} onStatusChange={(status) => setForm((current) => ({ ...current, status }))} assigneeId={form.assigneeId} onAssigneeChange={(assigneeId) => setForm((current) => ({ ...current, assigneeId }))} members={membersRequest.members} isMembersLoading={membersRequest.loading} />;
+  const attributeFields = <TaskAttributeFields idPrefix={editingId ? "edit-task" : "new-task"} tags={form.tags} onTagsChange={(tags) => setForm((current) => ({ ...current, tags }))} tagSuggestions={tagSuggestions} priority={form.priority} onPriorityChange={(priority) => setForm((current) => ({ ...current, priority }))} />;
+
+  const formContents = (
+    <>
+      <div><label htmlFor={editingId ? "edit-task-title" : "new-task-title"} className="mb-1.5 block text-sm font-semibold">Task title</label><input id={editingId ? "edit-task-title" : "new-task-title"} autoFocus required maxLength={255} value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
+      <div className="mt-4"><label htmlFor={editingId ? "edit-task-project" : "new-task-project"} className="mb-1.5 block text-sm font-semibold">Project</label><select id={editingId ? "edit-task-project" : "new-task-project"} required value={form.projectId} onChange={(event) => loadProjectMembers(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"><option value="">Select a project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></div>
+      <div className="mt-4"><label htmlFor={editingId ? "edit-task-description" : "new-task-description"} className="mb-1.5 block text-sm font-semibold">Description <span className="font-normal text-slate-500">(optional)</span></label><textarea id={editingId ? "edit-task-description" : "new-task-description"} rows={editingId ? 7 : 4} maxLength={1000} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} className="min-h-28 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" /></div>
+      {planningFields}{attributeFields}
+      {editingTask ? (
+        <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
+          <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>
+          <div className="flex items-center gap-2"><RefreshCw aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Updated by</dt><dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd></div>
+        </dl>
+      ) : null}
+    </>
   );
 
   return (
-    <main className="min-w-0 flex-1 bg-[#f4f6f2] px-3 py-5 text-slate-950 sm:px-5 sm:py-7 lg:px-7">
-      <div className="w-full">
-        <header className="flex flex-col gap-3 border-b border-slate-300 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-1 text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">
-              Your workspace
-            </p>
-            <h1 className="text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">
-              Today&apos;s tasks
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Capture what matters, then work through it.
-            </p>
-          </div>
-          <dl className="flex gap-3 text-sm sm:justify-end">
-            <div className="min-w-22 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <dt className="flex items-center gap-1.5 font-semibold text-amber-800">
-                <Circle aria-hidden="true" className="size-3.5" />
-                Open
-              </dt>
-              <dd className="text-lg font-semibold text-amber-950 tabular-nums">
-                {openCount}
-              </dd>
-            </div>
-            <div className="min-w-22 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <dt className="flex items-center gap-1.5 font-semibold text-emerald-800">
-                <CheckCircle2 aria-hidden="true" className="size-3.5" />
-                Completed
-              </dt>
-              <dd className="text-lg font-semibold text-emerald-950 tabular-nums">
-                {completedCount}
-              </dd>
-            </div>
-          </dl>
-        </header>
+    <main className="min-w-0 flex-1 overflow-x-hidden bg-[#f4f6f2] px-3 py-5 text-slate-950 sm:px-5 sm:py-7 lg:px-7">
+      <header className="flex flex-col gap-4 border-b border-slate-300 pb-4 lg:flex-row lg:items-end lg:justify-between">
+        <div><p className="mb-1 text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Planning workspace</p><h1 className="text-2xl font-semibold tracking-[-0.035em] sm:text-3xl">{viewLabels[filter] || "Tasks"}</h1><p className="mt-1 text-sm text-slate-600">Plan deadlines, ownership, and progress in one place.</p></div>
+        <dl className="flex flex-wrap gap-2 text-xs"><div className="rounded-lg border border-slate-200 bg-white px-3 py-2"><dt className="text-slate-500">Open</dt><dd className="text-lg font-bold tabular-nums">{tasks.length - completedCount}</dd></div><div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2"><dt className="text-red-700">Overdue</dt><dd className="text-lg font-bold tabular-nums text-red-900">{overdueCount}</dd></div><div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"><dt className="text-emerald-700">Done</dt><dd className="text-lg font-bold tabular-nums text-emerald-900">{completedCount}</dd></div></dl>
+      </header>
 
-        <section aria-labelledby="add-task-heading" className="py-4">
-          <h2 id="add-task-heading" className="sr-only">
-            Add a task
-          </h2>
-          <button
-            type="button"
-            onClick={() => setIsAddModalOpen(true)}
-            disabled={isProjectsLoading || projects.length === 0}
-            title={
-              projects.length === 0
-                ? "Create a project before adding tasks"
-                : undefined
-            }
-            className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-emerald-800/40 bg-white px-4 text-sm font-bold text-emerald-900 shadow-sm hover:border-emerald-800 hover:bg-emerald-50 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto sm:w-auto"
-          >
-            <Plus aria-hidden="true" className="size-4" />
-            Add task
-          </button>
-          {!isProjectsLoading && projects.length === 0 ? (
-            <p className="mt-2 text-right text-xs text-slate-500">
-              Create a{" "}
-              <Link
-                to="/projects"
-                className="font-bold text-emerald-800 underline underline-offset-2 focus-visible:outline-3 focus-visible:outline-emerald-800"
-              >
-                project
-              </Link>{" "}
-              before adding tasks.
-            </p>
-          ) : null}
-        </section>
-
-        <section
-          aria-labelledby="task-list-heading"
-          className="bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200"
-        >
-          <div className="flex min-h-11 items-center border-b border-slate-200 px-3 py-2 sm:px-4">
-            <h2
-              id="task-list-heading"
-              className="flex items-center gap-2 font-semibold"
-            >
-              <ListTodo
-                aria-hidden="true"
-                className="size-5 text-emerald-800"
-              />
-              {filter === "all"
-                ? "All tasks"
-                : `${filter[0].toUpperCase()}${filter.slice(1)} tasks`}
-            </h2>
-          </div>
-
-          {isLoading ? (
-            <div
-              className="flex min-h-40 items-center justify-center gap-3 text-sm text-slate-600"
-              role="status"
-            >
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-5 animate-spin text-emerald-800"
-              />
-              Loading tasks...
-            </div>
-          ) : loadError ? (
-            <div className="flex min-h-40 flex-col items-center justify-center px-5 text-center">
-              <p className="font-semibold text-slate-900">{loadError}</p>
-              <button
-                type="button"
-                onClick={loadTasks}
-                className="mt-4 min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
-              >
-                Try again
-              </button>
-            </div>
-          ) : visibleTasks.length === 0 ? (
-            <div className="flex min-h-44 flex-col items-center justify-center px-5 text-center">
-              {filter === "completed" ? (
-                <CheckCircle2
-                  aria-hidden="true"
-                  className="size-9 text-slate-400"
-                />
-              ) : (
-                <Inbox aria-hidden="true" className="size-9 text-slate-400" />
-              )}
-              <p className="mt-4 font-semibold">
-                {tasks.length === 0 ? "No tasks yet" : `No ${filter} tasks`}
-              </p>
-              <p className="mt-1 max-w-sm text-sm text-slate-500">
-                {tasks.length === 0
-                  ? "Add your first task above to get started."
-                  : "Choose another filter to see your tasks."}
-              </p>
-            </div>
-          ) : (
-            <ul className="divide-y divide-slate-200">
-              {visibleTasks.map((task) => (
-                <li
-                  key={task.id}
-                  className="group grid min-h-16 grid-cols-[44px_minmax(0,1fr)] items-start gap-x-2 gap-y-1 px-2 py-2 sm:flex sm:flex-nowrap sm:px-4"
-                >
-                  <button
-                    type="button"
-                    onClick={() => completeTask(task)}
-                    aria-label={
-                      task.completed
-                        ? `Mark ${task.title} as open`
-                        : `Mark ${task.title} as completed`
-                    }
-                    className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
-                  >
-                    {task.completed ? (
-                      <Check aria-hidden="true" className="size-5" />
-                    ) : (
-                      <Circle aria-hidden="true" className="size-5" />
-                    )}
-                  </button>
-
-                  <div className="min-w-0 flex-1 pt-1.5">
-                    <div>
-                      <p
-                        className={`break-words text-[15px] ${task.completed ? "text-slate-500 line-through decoration-slate-400" : "text-slate-800 font-semibold"}`}
-                      >
-                        {task.title}
-                      </p>
-                      {task.description ? (
-                        <p
-                          className={`mt-0.5 whitespace-pre-wrap break-words text-sm leading-5 ${task.completed ? "text-slate-400" : "text-slate-600"}`}
-                        >
-                          {task.description}
-                        </p>
-                      ) : null}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <PriorityBadge priority={task.priority} />
-                        <TaskTags tags={task.tags} />
-                      </div>
-                      <p className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                        <FolderKanban aria-hidden="true" className="size-3.5" />
-                        {task.project_name || "Unassigned legacy task"}
-                      </p>
-                    </div>
-
-                    <dl className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-slate-500 lg:flex-row lg:gap-4">
-                      <div className="flex items-center gap-1.5">
-                        <UserRound
-                          aria-hidden="true"
-                          className="size-3.5 flex-none"
-                        />
-                        <dt className="sr-only">Created</dt>
-                        <dd>
-                          Created by {getTaskUserName(task.created_by)} ·{" "}
-                          {formatDateTime(task.created_at)}
-                        </dd>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <RefreshCw
-                          aria-hidden="true"
-                          className="size-3.5 flex-none"
-                        />
-                        <dt className="sr-only">Updated</dt>
-                        <dd>
-                          Updated by {getTaskUserName(task.updated_by)} ·{" "}
-                          {formatDateTime(task.updated_at)}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-
-                  <div className="col-start-2 flex flex-none items-center sm:ml-0">
-                    <button
-                      type="button"
-                      onClick={() => startEditing(task)}
-                      aria-label={`Edit ${task.title}`}
-                      className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
-                    >
-                      <Pencil aria-hidden="true" className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTaskToDelete(task)}
-                      aria-label={`Delete ${task.title}`}
-                      className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-                    >
-                      <Trash2 aria-hidden="true" className="size-4" />
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      {isAddModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeAddModal();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") closeAddModal();
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-task-modal-title"
-            className="max-h-[calc(100svh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/10"
-          >
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-              <div>
-                <p className="text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">
-                  New task
-                </p>
-                <h2
-                  id="add-task-modal-title"
-                  className="text-lg font-semibold text-slate-950"
-                >
-                  What needs to be done?
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={closeAddModal}
-                disabled={isAdding}
-                aria-label="Close add task dialog"
-                className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <X aria-hidden="true" className="size-5" />
-              </button>
-            </div>
-
-            <form onSubmit={addTask} className="p-5">
-              <div>
-                <label
-                  htmlFor="new-task"
-                  className="mb-1.5 block text-sm font-semibold text-slate-800"
-                >
-                  Task title
-                </label>
-                <input
-                  id="new-task"
-                  type="text"
-                  autoFocus
-                  required
-                  value={inputTask}
-                  onChange={(event) => setInputTask(event.target.value)}
-                  placeholder="Enter a clear task title"
-                  maxLength={255}
-                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                />
-              </div>
-
-              <div className="mt-4">
-                <label
-                  htmlFor="new-task-project"
-                  className="mb-1.5 block text-sm font-semibold text-slate-800"
-                >
-                  Project
-                </label>
-                <select
-                  id="new-task-project"
-                  required
-                  value={inputProjectId}
-                  onChange={(event) => setInputProjectId(event.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                >
-                  <option value="">Select a project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="mt-4">
-                <label
-                  htmlFor="new-task-description"
-                  className="mb-1.5 block text-sm font-semibold text-slate-800"
-                >
-                  Description{" "}
-                  <span className="font-normal text-slate-500">(optional)</span>
-                </label>
-                <textarea
-                  id="new-task-description"
-                  value={inputDescription}
-                  onChange={(event) => setInputDescription(event.target.value)}
-                  placeholder="Add context, notes, or a definition of done"
-                  rows={4}
-                  maxLength={1000}
-                  className="min-h-28 w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                />
-              </div>
-
-              <TaskAttributeFields
-                idPrefix="new-task"
-                tags={inputTags}
-                onTagsChange={setInputTags}
-                tagSuggestions={tagSuggestions}
-                priority={inputPriority}
-                onPriorityChange={setInputPriority}
-              />
-
-              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={closeAddModal}
-                  disabled={isAdding}
-                  className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isAdding || !inputTask.trim() || !inputProjectId}
-                  className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isAdding ? (
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="size-4 animate-spin"
-                    />
-                  ) : (
-                    <Plus aria-hidden="true" className="size-4" />
-                  )}
-                  {isAdding ? "Adding..." : "Add task"}
-                </button>
-              </div>
-            </form>
-          </div>
+      <section aria-label="Task controls" className="flex flex-col gap-3 py-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div><label htmlFor="due-filter" className="mb-1 block text-xs font-bold text-slate-600">Due date</label><select id="due-filter" value={dueFilter} onChange={(event) => setDueFilter(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"><option value="any">Any due date</option><option value="dated">Has due date</option><option value="undated">No due date</option></select></div>
+          <div><label htmlFor="due-sort" className="mb-1 block text-xs font-bold text-slate-600">Sort</label><select id="due-sort" value={dueSort} onChange={(event) => setDueSort(event.target.value)} className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"><option value="none">Default order</option><option value="asc">Due date: soonest</option><option value="desc">Due date: latest</option></select></div>
         </div>
-      ) : null}
-
-      {editingTask ? (
-        <div
-          className={`fixed inset-0 z-50 flex justify-end bg-slate-950/45 transition-opacity duration-200 motion-reduce:transition-none ${isEditorOpen ? "opacity-100" : "opacity-0"}`}
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeEditor();
-          }}
-        >
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-task-drawer-title"
-            className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:max-w-xl sm:border-l sm:border-slate-200 ${isEditorOpen ? "translate-x-0" : "translate-x-full"}`}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") closeEditor();
-            }}
-            onTransitionEnd={(event) => {
-              if (
-                event.target === event.currentTarget &&
-                event.propertyName === "transform" &&
-                !isEditorOpen
-              ) {
-                finishClosingEditor();
-              }
-            }}
-          >
-            <div className="flex min-h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-7">
-              <div className="min-w-0 pr-4">
-                <p className="text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">
-                  Task details
-                </p>
-                <h2
-                  id="edit-task-drawer-title"
-                  className="truncate text-xl font-semibold tracking-[-0.025em] text-slate-950"
-                >
-                  Edit task
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={closeEditor}
-                disabled={isSaving}
-                aria-label="Close task editor"
-                className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <X aria-hidden="true" className="size-5" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={(event) => saveTask(event, editingTask)}
-              className="flex min-h-0 flex-1 flex-col"
-            >
-              <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7 sm:py-8">
-                <dl className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <CalendarClock
-                      aria-hidden="true"
-                      className="size-4 flex-none"
-                    />
-                    <dt className="font-semibold text-slate-700">Created by</dt>
-                    <dd>
-                      {getTaskUserName(editingTask.created_by)} ·{" "}
-                      {formatDateTime(editingTask.created_at)}
-                    </dd>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <RefreshCw
-                      aria-hidden="true"
-                      className="size-4 flex-none"
-                    />
-                    <dt className="font-semibold text-slate-700">Updated by</dt>
-                    <dd>
-                      {getTaskUserName(editingTask.updated_by)} ·{" "}
-                      {formatDateTime(editingTask.updated_at)}
-                    </dd>
-                  </div>
-                </dl>
-                <div>
-                  <label
-                    htmlFor="edit-task-title"
-                    className="mb-1.5 block text-sm font-semibold text-slate-800"
-                  >
-                    Task title
-                  </label>
-                  <input
-                    id="edit-task-title"
-                    type="text"
-                    autoFocus
-                    required
-                    value={editTitle}
-                    onChange={(event) => setEditTitle(event.target.value)}
-                    maxLength={255}
-                    className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-base shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                  />
-                </div>
-
-                <div className="mt-6">
-                  <label
-                    htmlFor="edit-task-project"
-                    className="mb-1.5 block text-sm font-semibold text-slate-800"
-                  >
-                    Project
-                  </label>
-                  <select
-                    id="edit-task-project"
-                    required
-                    value={editProjectId}
-                    onChange={(event) => setEditProjectId(event.target.value)}
-                    className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                  >
-                    <option value="">Select a project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="mt-6">
-                  <label
-                    htmlFor="edit-task-description"
-                    className="mb-1.5 block text-sm font-semibold text-slate-800"
-                  >
-                    Description{" "}
-                    <span className="font-normal text-slate-500">
-                      (optional)
-                    </span>
-                  </label>
-                  <textarea
-                    id="edit-task-description"
-                    value={editDescription}
-                    onChange={(event) => setEditDescription(event.target.value)}
-                    placeholder="Add context, notes, or a definition of done"
-                    maxLength={1000}
-                    className="min-h-52 w-full resize-y rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15"
-                  />
-                  <p className="mt-1.5 text-right text-xs text-slate-500">
-                    {editDescription.length}/1000
-                  </p>
-                </div>
-
-                <TaskAttributeFields
-                  idPrefix="edit-task"
-                  tags={editTags}
-                  onTagsChange={setEditTags}
-                  tagSuggestions={tagSuggestions}
-                  priority={editPriority}
-                  onPriorityChange={setEditPriority}
-                />
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
-                <button
-                  type="button"
-                  onClick={closeEditor}
-                  disabled={isSaving}
-                  className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving || !editTitle.trim() || !editProjectId}
-                  className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSaving ? (
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="size-4 animate-spin"
-                    />
-                  ) : (
-                    <Save aria-hidden="true" className="size-4" />
-                  )}
-                  {isSaving ? "Saving..." : "Save changes"}
-                </button>
-              </div>
-            </form>
-          </aside>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-slate-300 bg-white p-1" aria-label="Task layout"><button type="button" onClick={() => changeView("list")} aria-pressed={view === "list"} className={`flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md px-3 text-xs font-bold focus-visible:outline-3 focus-visible:outline-emerald-800 ${view === "list" ? "bg-[#173b35] text-white" : "text-slate-600 hover:bg-slate-100"}`}><List aria-hidden="true" className="size-4" />List</button><button type="button" onClick={() => changeView("board")} aria-pressed={view === "board"} className={`flex min-h-9 cursor-pointer items-center gap-1.5 rounded-md px-3 text-xs font-bold focus-visible:outline-3 focus-visible:outline-emerald-800 ${view === "board" ? "bg-[#173b35] text-white" : "text-slate-600 hover:bg-slate-100"}`}><Columns3 aria-hidden="true" className="size-4" />Board</button></div>
+          <button type="button" onClick={openCreate} disabled={isProjectsLoading || projects.length === 0} className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg bg-[#173b35] px-4 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" />Add task</button>
         </div>
-      ) : null}
+      </section>
+      {!isProjectsLoading && projects.length === 0 ? <p className="mb-4 text-sm text-slate-600">Create a <Link to="/projects" className="font-bold text-emerald-800 underline">project</Link> before adding tasks.</p> : null}
 
-      {taskToDelete ? (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setTaskToDelete(null);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="delete-task-title"
-            className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl ring-1 ring-slate-900/10"
-          >
-            <h2
-              id="delete-task-title"
-              className="text-lg font-semibold text-slate-950"
-            >
-              Delete task?
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              &quot;{taskToDelete.title}&quot; will be permanently removed. This
-              action cannot be undone.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setTaskToDelete(null)}
-                className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={deleteTask}
-                className="min-h-11 cursor-pointer rounded-lg bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-red-700"
-              >
-                Delete task
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <section aria-labelledby="task-list-heading" className={view === "list" ? "bg-white shadow-sm ring-1 ring-slate-200" : ""}>
+        <h2 id="task-list-heading" className="sr-only">{viewLabels[filter] || "Tasks"}</h2>
+        {isLoading ? <div className="flex min-h-44 items-center justify-center gap-2 text-sm text-slate-600" role="status"><LoaderCircle aria-hidden="true" className="size-5 animate-spin text-emerald-800" />Loading tasks...</div> : loadError ? <div className="grid min-h-44 place-items-center text-center"><div><p role="alert" className="font-semibold">{loadError}</p><button type="button" onClick={loadTasks} className="mt-3 min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold focus-visible:outline-3 focus-visible:outline-emerald-800">Try again</button></div></div> : visibleTasks.length === 0 ? <div className="grid min-h-44 place-items-center bg-white px-5 text-center ring-1 ring-slate-200"><div>{filter === "overdue" ? <AlertTriangle aria-hidden="true" className="mx-auto size-8 text-emerald-700" /> : <Inbox aria-hidden="true" className="mx-auto size-8 text-slate-400" />}<p className="mt-3 font-semibold">No tasks in this view</p><p className="mt-1 text-sm text-slate-500">Try another planning view or due-date filter.</p></div></div> : view === "board" ? <TaskBoard tasks={visibleTasks} onStatusChange={updateStatus} onEdit={openEditor} onDelete={setTaskToDelete} updatingTaskId={updatingTaskId} /> : (
+          <ul className="divide-y divide-slate-200">
+            {visibleTasks.map((task) => <li key={task.id} className="flex items-start gap-2 px-2 py-3 sm:px-4"><button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button><div className="min-w-0 flex-1 py-1.5"><p className={`break-words text-sm font-semibold ${normalizeTaskStatus(task) === "done" ? "text-slate-500 line-through" : "text-slate-900"}`}>{task.title}</p>{task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}<div className="mt-2 flex flex-wrap gap-1.5"><StatusBadge status={normalizeTaskStatus(task)} /><DueDateBadge dueDate={task.due_date} state={getDueDateState(task)} /><AssigneeBadge assignee={getTaskAssignee(task)} /><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /></div><p className="mt-2 text-xs font-semibold text-emerald-800">{task.project_name || "Project task"}</p><dl className="mt-1.5 flex flex-col gap-1 text-[11px] text-slate-500 lg:flex-row lg:gap-4"><div className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5" /><dt className="sr-only">Created by</dt><dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd></div><div className="flex items-center gap-1.5"><RefreshCw aria-hidden="true" className="size-3.5" /><dt className="sr-only">Updated by</dt><dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd></div></dl></div><button type="button" onClick={() => openEditor(task)} aria-label={`Edit ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button><button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button></li>)}
+          </ul>
+        )}
+      </section>
+
+      {isCreateOpen ? <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="presentation" onKeyDown={(event) => { if (event.key === "Escape") closeCreate(); }} onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreate(); }}><section role="dialog" aria-modal="true" aria-labelledby="create-task-title" className="max-h-[calc(100svh-2rem)] w-full max-w-xl overflow-y-auto rounded-xl bg-white shadow-2xl"><header className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5"><div><p className="text-[10px] font-bold tracking-[0.14em] text-emerald-800 uppercase">New task</p><h2 id="create-task-title" className="text-lg font-semibold">Plan a task</h2></div><button type="button" onClick={closeCreate} disabled={isSubmitting} aria-label="Close task form" className="grid size-11 cursor-pointer place-items-center rounded-lg hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed"><X aria-hidden="true" className="size-5" /></button></header><form onSubmit={saveTask} className="p-5">{formContents}<div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={closeCreate} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold disabled:cursor-not-allowed">Cancel</button><button type="submit" disabled={isSubmitting || !form.title.trim() || !form.projectId} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Plus aria-hidden="true" className="size-4" />}{isSubmitting ? "Saving..." : "Add task"}</button></div></form></section></div> : null}
+
+      {editingTask ? <div className={`fixed inset-0 z-50 flex justify-end bg-slate-950/45 transition-opacity motion-reduce:transition-none ${isEditorVisible ? "opacity-100" : "opacity-0"}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}><aside role="dialog" aria-modal="true" aria-labelledby="edit-task-drawer-title" onKeyDown={(event) => { if (event.key === "Escape") closeEditor(); }} className={`flex h-svh w-full max-w-xl transform-gpu flex-col bg-white shadow-2xl transition-transform duration-300 motion-reduce:transition-none ${isEditorVisible ? "translate-x-0" : "translate-x-full"}`}><header className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5"><div><p className="text-[10px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Task details</p><h2 id="edit-task-drawer-title" className="text-lg font-semibold">Edit task</h2></div><button type="button" onClick={closeEditor} disabled={isSubmitting} aria-label="Close task editor" className="grid size-11 cursor-pointer place-items-center rounded-lg hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed"><X aria-hidden="true" className="size-5" /></button></header><form onSubmit={saveTask} className="flex min-h-0 flex-1 flex-col"><div className="flex-1 overflow-y-auto p-5 sm:p-7">{formContents}</div><footer className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end"><button type="button" onClick={closeEditor} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold disabled:cursor-not-allowed">Cancel</button><button type="submit" disabled={isSubmitting || !form.title.trim() || !form.projectId} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}{isSubmitting ? "Saving..." : "Save changes"}</button></footer></form></aside></div> : null}
+
+      {taskToDelete ? <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTaskToDelete(null); }}><section role="dialog" aria-modal="true" aria-labelledby="delete-task-title" className="w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl"><h2 id="delete-task-title" className="text-lg font-semibold">Delete task?</h2><p className="mt-2 text-sm leading-6 text-slate-600">“{taskToDelete.title}” will be permanently removed.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setTaskToDelete(null)} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 px-4 text-sm font-bold">Cancel</button><button type="button" onClick={deleteTask} className="min-h-11 cursor-pointer rounded-lg bg-red-700 px-4 text-sm font-bold text-white">Delete task</button></div></section></div> : null}
     </main>
   );
 };

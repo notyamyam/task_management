@@ -1,9 +1,11 @@
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 
 TagColor = Literal["slate", "emerald", "blue", "violet", "amber", "rose"]
+TaskStatus = Literal["backlog", "in_progress", "blocked", "done"]
 
 
 class TaskTag(BaseModel):
@@ -24,6 +26,9 @@ class TaskCreate(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
     completed: bool = False
     project_id: int | None = Field(default=None, gt=0)
+    assignee_user_id: int | None = Field(default=None, gt=0)
+    due_date: date | None = None
+    status: TaskStatus = "backlog"
     tags: list[TaskTag] = Field(default_factory=list, max_length=10)
     priority: Literal["low", "medium", "high"] = "medium"
 
@@ -63,3 +68,34 @@ class TaskCreate(BaseModel):
                 seen.add(normalized_tag)
                 tags.append(tag)
         return tags
+
+
+class TaskStatusUpdate(BaseModel):
+    status: TaskStatus
+
+
+class TaskUserResponse(BaseModel):
+    id: int
+    email: str
+    first_name: str | None
+    last_name: str | None
+
+
+class TaskResponse(BaseModel):
+    id: int
+    title: str
+    description: str | None
+    completed: bool
+    status: TaskStatus
+    user_id: int
+    created_by: TaskUserResponse | None
+    updated_by: TaskUserResponse | None
+    assignee_user_id: int | None
+    assignee: TaskUserResponse | None
+    project_id: int | None
+    project_name: str | None
+    due_date: date | None
+    tags: list[TaskTag]
+    priority: Literal["low", "medium", "high"]
+    created_at: datetime
+    updated_at: datetime

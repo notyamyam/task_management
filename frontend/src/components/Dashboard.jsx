@@ -13,6 +13,8 @@ import {
 import { Link, useOutletContext } from "react-router-dom";
 
 import { ENDPOINTS, instance } from "./api";
+import { DueDateBadge } from "./TaskAttributes";
+import { getDueDateState, normalizeTaskStatus } from "./taskPlanning";
 
 const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -52,7 +54,7 @@ const Dashboard = () => {
   }, []);
 
   const tasks = taskRequest.tasks || [];
-  const openTasks = tasks.filter((task) => !task.completed);
+  const openTasks = tasks.filter((task) => normalizeTaskStatus(task) !== "done");
   const completedCount = tasks.length - openTasks.length;
   const visibleTasks = openTasks.slice(0, 5);
   const visibleProjects = projects.slice(0, 4);
@@ -120,7 +122,7 @@ const Dashboard = () => {
                 {visibleTasks.map((task) => (
                   <li key={task.id} className="flex min-h-16 items-start gap-3 px-4 py-3">
                     <Circle aria-hidden="true" className="mt-0.5 size-4 flex-none text-amber-700" />
-                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{task.title}</span><span className="mt-0.5 line-clamp-1 block text-xs text-slate-500">{task.description || "No description"}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{task.title}</span><span className="mt-0.5 line-clamp-1 block text-xs text-slate-500">{task.description || "No description"}</span><span className="mt-1.5 flex"><DueDateBadge dueDate={task.due_date} state={getDueDateState(task)} /></span></span>
                   </li>
                 ))}
               </ul>

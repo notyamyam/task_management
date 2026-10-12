@@ -64,7 +64,8 @@ def serialize_task_context(task, project_name):
         "id": task.id,
         "title": task.title,
         "description": (task.description or "")[:500],
-        "status": "completed" if task.completed else "open",
+        "status": task.status,
+        "due_date": task.due_date,
         "project": project_name,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
@@ -259,6 +260,7 @@ def export_tasks_csv(
         "title",
         "description",
         "status",
+        "due_date",
         "project",
         "created_at",
         "updated_at",
@@ -268,7 +270,8 @@ def export_tasks_csv(
         writer.writerow({
             "title": safe_csv_value(task.title),
             "description": safe_csv_value(task.description),
-            "status": "completed" if task.completed else "open",
+            "status": task.status,
+            "due_date": task.due_date.isoformat() if task.due_date else "",
             "project": safe_csv_value(project_names.get(task.project_id, "")),
             "created_at": task.created_at.isoformat() if task.created_at else "",
             "updated_at": task.updated_at.isoformat() if task.updated_at else "",
@@ -300,7 +303,7 @@ def generate_project_task_report(
     owner, members = get_project_people(project, db)
     ai_tasks = tasks[:MAX_REPORT_INSIGHT_TASKS]
     task_context = [serialize_task_context(task, project.name) for task in ai_tasks]
-    completed_count = sum(1 for task in tasks if task.completed)
+    completed_count = sum(1 for task in tasks if task.status == "done")
     prompt = (
         "Create a concise project status summary and one brief, practical insight for each "
         "supplied task. Use only the supplied data and exact metrics. Do not invent dates, owners, blockers, priorities, "
@@ -333,6 +336,7 @@ def generate_project_task_report(
         "task_title",
         "task_description",
         "status",
+        "due_date",
         "created_at",
         "updated_at",
         "ai_summary",
@@ -359,7 +363,8 @@ def generate_project_task_report(
             "task_id": task.id,
             "task_title": safe_csv_value(task.title),
             "task_description": safe_csv_value(task.description),
-            "status": "completed" if task.completed else "open",
+            "status": task.status,
+            "due_date": task.due_date.isoformat() if task.due_date else "",
             "created_at": task.created_at.isoformat() if task.created_at else "",
             "updated_at": task.updated_at.isoformat() if task.updated_at else "",
             "ai_insight": safe_csv_value(report.insights.get(str(task.id), "")),
