@@ -57,8 +57,8 @@ const Login = () => {
     <main className="min-h-svh bg-[#f2f4ef] text-slate-950 lg:grid lg:grid-cols-[minmax(300px,0.72fr)_minmax(480px,1.28fr)]">
       <section className="hidden bg-[#173b35] px-10 py-8 text-white lg:flex lg:flex-col lg:justify-between xl:px-14">
         <div className="flex items-center gap-3">
-          <span className="grid size-9 place-items-center rounded-lg bg-[#dce993] text-sm font-black text-[#173b35]">
-            C
+          <span className="grid size-9 place-items-center rounded-lg bg-[#dce993] p-1">
+            <img src="/Corner-logo.png" alt="" className="size-full rounded-md object-cover" />
           </span>
           <span className="text-sm font-bold tracking-[0.16em] uppercase">
             Corner
@@ -87,8 +87,8 @@ const Login = () => {
       <section className="flex min-h-svh items-center justify-center px-4 py-5 sm:px-8 lg:px-12">
         <div className="w-full max-w-[400px]">
           <div className="mb-7 flex items-center gap-2.5 lg:hidden">
-            <span className="grid size-9 place-items-center rounded-lg bg-[#173b35] text-sm font-black text-[#dce993]">
-              C
+            <span className="grid size-9 place-items-center rounded-lg bg-[#173b35] p-1">
+              <img src="/Corner-logo.png" alt="" className="size-full rounded-md object-cover" />
             </span>
             <span className="text-sm font-bold tracking-[0.16em] text-[#173b35] uppercase">
               Corner

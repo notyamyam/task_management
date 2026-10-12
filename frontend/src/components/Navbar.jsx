@@ -68,8 +68,10 @@ const Navbar = ({ filter, onFilterChange, profile, projects = [] }) => {
   };
   return (
     <aside className="sticky top-0 z-20 flex h-svh w-16 flex-none flex-col border-r border-emerald-900/70 bg-[#173b35] px-2 py-3 text-white sm:w-52 sm:px-3 sm:py-4">
-      <NavLink to="/dashboard" className="flex min-h-11 items-center justify-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-2">
-        <span className="grid size-9 flex-none place-items-center rounded-lg bg-[#dce993] text-sm font-black text-[#173b35]">C</span>
+      <NavLink to="/dashboard" aria-label="Corner dashboard" className="flex min-h-11 items-center justify-center gap-2.5 rounded-lg focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-2">
+        <span className="grid size-9 flex-none place-items-center rounded-lg bg-[#dce993] p-1">
+          <img src="/Corner-logo.png" alt="" className="size-full rounded-md object-cover" />
+        </span>
         <span className="hidden text-base font-bold tracking-tight sm:inline">Corner</span>
       </NavLink>
 
