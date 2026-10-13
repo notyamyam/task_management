@@ -131,8 +131,14 @@ def migrate_existing_schema():
                 ))
             if "priority" not in task_columns:
                 connection.execute(text(
-                    "ALTER TABLE tasks ADD COLUMN priority VARCHAR(10) "
-                    "NOT NULL DEFAULT 'medium'"
+                    "ALTER TABLE tasks ADD COLUMN priority VARCHAR(10)"
+                ))
+            else:
+                connection.execute(text(
+                    "ALTER TABLE tasks ALTER COLUMN priority DROP NOT NULL"
+                ))
+                connection.execute(text(
+                    "ALTER TABLE tasks ALTER COLUMN priority DROP DEFAULT"
                 ))
             if "updated_by_user_id" not in task_columns:
                 user_reference = " REFERENCES users(id)" if "users" in tables else ""

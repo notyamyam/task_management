@@ -28,14 +28,19 @@ export const getDueDateState = (task, now = new Date()) => {
   return "upcoming";
 };
 
+export const getTaskListBackground = (task) => {
+  if (normalizeTaskStatus(task) === "done") return "border-l-4 border-green-500 bg-green-100";
+  const dueState = getDueDateState(task);
+  if (dueState === "overdue") return "border-l-4 border-red-500 bg-red-100";
+  if (dueState === "today") return "border-l-4 border-orange-500 bg-orange-100";
+  if (dueState === "approaching" || dueState === "upcoming") return "border-l-4 border-yellow-500 bg-yellow-100";
+  return "border-l-4 border-gray-400 bg-gray-100";
+};
+
 export const taskMatchesPlanningView = (task, view, userId) => {
   const status = normalizeTaskStatus(task);
-  const dueState = getDueDateState(task);
   if (view === "open") return status !== "done";
   if (view === "completed") return status === "done";
-  if (view === "today") return dueState === "today";
-  if (view === "upcoming") return dueState === "approaching" || dueState === "upcoming";
-  if (view === "overdue") return dueState === "overdue";
   if (view === "my") return Number(getTaskAssignee(task)?.id ?? task.assignee_user_id) === Number(userId);
   return true;
 };
@@ -58,7 +63,7 @@ export const buildTaskPayload = (task, overrides = {}) => {
     completed: status === "done",
     project_id: Number(overrides.project_id ?? task.project_id),
     tags: overrides.tags ?? task.tags ?? [],
-    priority: overrides.priority ?? task.priority ?? "medium",
+    priority: Object.hasOwn(overrides, "priority") ? overrides.priority : task.priority ?? null,
     due_date: Object.hasOwn(overrides, "due_date") ? overrides.due_date : task.due_date ?? null,
     assignee_user_id: Object.hasOwn(overrides, "assignee_user_id") ? overrides.assignee_user_id : task.assignee_user_id ?? getTaskAssignee(task)?.id ?? null,
     status,

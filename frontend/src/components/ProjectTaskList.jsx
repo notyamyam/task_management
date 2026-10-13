@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Circle, Columns3, FileDown, List, ListTodo, LoaderCircle, Pencil, Plus, RefreshCw, Save, Trash2, UserRound, X } from "lucide-react";
+import { Check, Circle, Columns3, FileDown, List, ListTodo, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, RefreshCw, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
@@ -9,11 +9,13 @@ import {
   PriorityBadge,
   StatusBadge,
   TaskAttributeFields,
+  TaskEditableOverview,
   TaskPlanningFields,
   TaskTags,
 } from "./TaskAttributes";
 import TaskBoard from "./TaskBoard";
-import { buildTaskPayload, getDueDateState, getTaskAssignee, normalizeTaskStatus } from "./taskPlanning";
+import TaskCollaboration from "./TaskCollaboration";
+import { buildTaskPayload, getDueDateState, getTaskAssignee, getTaskListBackground, normalizeTaskStatus } from "./taskPlanning";
 import {
   getTaskTagSuggestions,
   getTaskUserName,
@@ -38,16 +40,18 @@ const getErrorMessage = (error, fallback) => {
   return typeof detail === "string" ? detail : fallback;
 };
 
-const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user" }) => {
+const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user", currentUserId }) => {
   const [taskRequest, setTaskRequest] = useState({ projectId: null, tasks: [], error: "" });
   const [savedTagSuggestions, setSavedTagSuggestions] = useState([]);
   const [editingTask, setEditingTask] = useState(null);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [isEditDrawerVisible, setIsEditDrawerVisible] = useState(false);
+  const [isEditFullscreen, setIsEditFullscreen] = useState(false);
+  const [autoSaveState, setAutoSaveState] = useState("idle");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState([]);
-  const [priority, setPriority] = useState("medium");
+  const [priority, setPriority] = useState(null);
   const [dueDate, setDueDate] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [status, setStatus] = useState("backlog");
@@ -58,6 +62,8 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const editDrawerCloseTimer = useRef(null);
+  const editValuesRef = useRef({ title: "", description: "", tags: [], priority: null, dueDate: "", assigneeId: "", status: "backlog" });
+  const autoSaveQueue = useRef(Promise.resolve());
 
   useEffect(() => {
     let isCurrent = true;
@@ -110,7 +116,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
     setTitle("");
     setDescription("");
     setTags([]);
-    setPriority("medium");
+    setPriority(null);
     setDueDate("");
     setAssigneeId("");
     setStatus("backlog");
@@ -124,10 +130,22 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
     setTitle(task.title);
     setDescription(task.description || "");
     setTags(normalizeTaskTags(task.tags));
-    setPriority(task.priority || "medium");
+    setPriority(task.priority ?? null);
     setDueDate(task.due_date || "");
     setAssigneeId(String(task.assignee_user_id ?? getTaskAssignee(task)?.id ?? ""));
     setStatus(normalizeTaskStatus(task));
+    editValuesRef.current = {
+      title: task.title,
+      description: task.description || "",
+      tags: normalizeTaskTags(task.tags),
+      priority: task.priority ?? null,
+      dueDate: task.due_date || "",
+      assigneeId: String(task.assignee_user_id ?? getTaskAssignee(task)?.id ?? ""),
+      status: normalizeTaskStatus(task),
+    };
+    autoSaveQueue.current = Promise.resolve();
+    setAutoSaveState("idle");
+    setIsEditFullscreen(false);
   };
 
   const closeCreateForm = () => {
@@ -136,7 +154,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
     setTitle("");
     setDescription("");
     setTags([]);
-    setPriority("medium");
+    setPriority(null);
     setDueDate("");
     setAssigneeId("");
     setStatus("backlog");
@@ -148,7 +166,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
     setTitle("");
     setDescription("");
     setTags([]);
-    setPriority("medium");
+    setPriority(null);
     setDueDate("");
     setAssigneeId("");
     setStatus("backlog");
@@ -160,8 +178,53 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
   };
 
   const closeEditDrawer = () => {
-    if (isSubmitting) return;
     animateEditDrawerClosed();
+  };
+
+  const applyEditValues = (values) => {
+    setTitle(values.title);
+    setDescription(values.description);
+    setTags(values.tags);
+    setPriority(values.priority);
+    setDueDate(values.dueDate);
+    setAssigneeId(values.assigneeId);
+    setStatus(values.status);
+  };
+
+  const autoSaveTask = (changes) => {
+    if (!editingTask) return;
+    const nextValues = { ...editValuesRef.current, ...changes };
+    const tagsError = validateTaskTags(nextValues.tags);
+    if (tagsError) return toast.error(tagsError);
+    if (!nextValues.title.trim()) return;
+    if (nextValues.assigneeId && !members.some((member) => Number(member.id) === Number(nextValues.assigneeId))) {
+      return toast.error("Choose an assignee who belongs to this project.");
+    }
+
+    editValuesRef.current = nextValues;
+    applyEditValues(nextValues);
+    setAutoSaveState("saving");
+    const taskId = editingTask.id;
+    const payload = buildTaskPayload(editingTask, {
+      title: nextValues.title.trim(),
+      description: nextValues.description.trim() || null,
+      project_id: Number(projectId),
+      tags: nextValues.tags,
+      priority: nextValues.priority,
+      due_date: nextValues.dueDate || null,
+      assignee_user_id: nextValues.assigneeId ? Number(nextValues.assigneeId) : null,
+      status: nextValues.status,
+    });
+    const request = autoSaveQueue.current.catch(() => undefined).then(() => instance.put(ENDPOINTS.UPDATE_TASK(taskId), payload));
+    autoSaveQueue.current = request;
+    request.then((response) => {
+      setTaskRequest((current) => ({ ...current, tasks: current.tasks.map((task) => task.id === taskId ? response.data : task) }));
+      setSavedTagSuggestions((current) => mergeTaskTagSuggestions(current, response.data.tags));
+      if (autoSaveQueue.current === request) setAutoSaveState("saved");
+    }).catch((error) => {
+      if (autoSaveQueue.current === request) setAutoSaveState("error");
+      toast.error(getErrorMessage(error, "Couldn't save this change."));
+    });
   };
 
   const saveTask = async (event) => {
@@ -180,7 +243,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
       setIsSubmitting(false);
       return;
     }
-    const payload = buildTaskPayload(editingTask || { title: cleanTitle, project_id: projectId }, {
+    const payload = buildTaskPayload({ title: cleanTitle, project_id: projectId }, {
       title: cleanTitle,
       description: description.trim() || null,
       project_id: Number(projectId),
@@ -192,29 +255,21 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
     });
 
     try {
-      const response = editingTask
-        ? await instance.put(ENDPOINTS.UPDATE_TASK(editingTask.id), payload)
-        : await instance.post(ENDPOINTS.CREATE_TASK(), payload);
+      const response = await instance.post(ENDPOINTS.CREATE_TASK(), payload);
       setTaskRequest((current) => ({
         ...current,
-        tasks: editingTask
-          ? current.tasks.map((task) => task.id === editingTask.id ? response.data : task)
-          : [response.data, ...current.tasks],
+        tasks: [response.data, ...current.tasks],
       }));
       setSavedTagSuggestions((current) => mergeTaskTagSuggestions(current, response.data.tags));
-      toast.success(editingTask ? "Task updated." : "Task added to the project.");
-      if (editingTask) {
-        animateEditDrawerClosed();
-      } else {
-        setIsCreateFormOpen(false);
-        setTitle("");
-        setDescription("");
-        setTags([]);
-        setPriority("medium");
-        setDueDate("");
-        setAssigneeId("");
-        setStatus("backlog");
-      }
+      toast.success("Task added to the project.");
+      setIsCreateFormOpen(false);
+      setTitle("");
+      setDescription("");
+      setTags([]);
+      setPriority(null);
+      setDueDate("");
+      setAssigneeId("");
+      setStatus("backlog");
     } catch (error) {
       toast.error(getErrorMessage(error, "Couldn't save the task."));
     } finally {
@@ -338,8 +393,8 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
         ) : (
           <ul className="divide-y divide-slate-200">
             {tasks.map((task) => (
-              <li key={task.id} className="flex min-h-16 items-start gap-2 px-2 py-2 sm:px-4">
-                <button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-emerald-50 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
+              <li key={task.id} className={`flex min-h-16 items-start gap-2 px-2 py-2 transition-colors sm:px-4 ${getTaskListBackground(task)}`}>
+                <button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-white/70 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
                 <div className="min-w-0 flex-1 py-2">
                   <p className={`break-words text-sm font-semibold ${normalizeTaskStatus(task) === "done" ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>
                   {task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}
@@ -349,8 +404,8 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
                     <div className="flex items-center gap-1.5"><RefreshCw aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Updated by</dt><dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd></div>
                   </dl>
                 </div>
-                <button type="button" onClick={() => openEditForm(task)} aria-label={`Edit ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button>
-                <button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
+                <button type="button" onClick={() => openEditForm(task)} aria-label={`Edit ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-white/70 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button>
+                <button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-100 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
               </li>
             ))}
           </ul>
@@ -384,7 +439,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-project-task-drawer-title"
-            className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:max-w-xl sm:border-l sm:border-slate-200 ${isEditDrawerVisible ? "translate-x-0" : "translate-x-full"}`}
+            className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-[transform,max-width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:border-l sm:border-slate-200 ${isEditFullscreen ? "max-w-none" : "sm:max-w-xl"} ${isEditDrawerVisible ? "translate-x-0" : "translate-x-full"}`}
             onKeyDown={(event) => {
               if (event.key === "Escape") closeEditDrawer();
             }}
@@ -397,39 +452,23 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
             <div className="flex min-h-20 items-center justify-between border-b border-slate-200 px-5 sm:px-7">
               <div className="min-w-0 pr-4">
                 <p className="truncate text-[11px] font-bold tracking-[0.14em] text-emerald-800 uppercase">{projectName}</p>
-                <h2 id="edit-project-task-drawer-title" className="text-xl font-semibold tracking-[-0.025em] text-slate-950">Edit task</h2>
+                <div className="flex items-center gap-2"><h2 id="edit-project-task-drawer-title" className="text-xl font-semibold tracking-[-0.025em] text-slate-950">Edit task</h2><span role="status" className={`text-[11px] font-semibold ${autoSaveState === "error" ? "text-red-700" : "text-slate-400"}`}>{autoSaveState === "saving" ? "Saving..." : autoSaveState === "saved" ? "Saved" : autoSaveState === "error" ? "Save failed" : "Autosaves"}</span></div>
               </div>
-              <button type="button" onClick={closeEditDrawer} disabled={isSubmitting} aria-label="Close task editor" className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
-                <X aria-hidden="true" className="size-5" />
-              </button>
+              <div className="flex"><button type="button" onClick={() => setIsEditFullscreen((current) => !current)} aria-label={isEditFullscreen ? "Exit fullscreen task view" : "Open fullscreen task view"} title={isEditFullscreen ? "Exit fullscreen" : "Fullscreen"} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800">{isEditFullscreen ? <Minimize2 aria-hidden="true" className="size-5" /> : <Maximize2 aria-hidden="true" className="size-5" />}</button><button type="button" onClick={closeEditDrawer} aria-label="Close task editor" className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"><X aria-hidden="true" className="size-5" /></button></div>
             </div>
 
-            <form onSubmit={saveTask} className="flex min-h-0 flex-1 flex-col">
-              <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7 sm:py-8">
-                <div>
-                  <label htmlFor="edit-project-task-title" className="mb-1.5 block text-sm font-semibold text-slate-800">Task title</label>
-                  <input id="edit-project-task-title" type="text" autoFocus required maxLength={255} value={title} onChange={(event) => setTitle(event.target.value)} className="h-12 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-base shadow-sm outline-none focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
-                </div>
-                <div className="mt-6">
-                  <label htmlFor="edit-project-task-description" className="mb-1.5 block text-sm font-semibold text-slate-800">Description <span className="font-normal text-slate-500">(optional)</span></label>
-                  <textarea id="edit-project-task-description" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Add context, notes, or a definition of done" maxLength={1000} className="min-h-52 w-full resize-y rounded-lg border border-slate-300 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-800 focus:ring-3 focus:ring-emerald-800/15" />
-                  <p className="mt-1.5 text-right text-xs text-slate-500">{description.length}/1000</p>
-                </div>
-                <TaskPlanningFields idPrefix="edit-project-task" dueDate={dueDate} onDueDateChange={setDueDate} status={status} onStatusChange={setStatus} assigneeId={assigneeId} onAssigneeChange={setAssigneeId} members={members} />
-                <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={setTags} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={setPriority} />
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className={`flex-1 overflow-y-auto px-5 py-6 sm:px-7 sm:py-8 ${isEditFullscreen ? "mx-auto w-full max-w-5xl" : ""}`}>
+                <TaskEditableOverview idPrefix="edit-project-task" title={title} description={description} onTitleChange={(nextTitle) => autoSaveTask({ title: nextTitle })} onDescriptionChange={(nextDescription) => autoSaveTask({ description: nextDescription })} priority={priority} onPriorityChange={(nextPriority) => autoSaveTask({ priority: nextPriority })} />
+                <TaskPlanningFields idPrefix="edit-project-task" dueDate={dueDate} onDueDateChange={(nextDueDate) => autoSaveTask({ dueDate: nextDueDate })} status={status} onStatusChange={(nextStatus) => autoSaveTask({ status: nextStatus })} assigneeId={assigneeId} onAssigneeChange={(nextAssigneeId) => autoSaveTask({ assigneeId: nextAssigneeId })} members={members} compactStatus />
+                <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={(nextTags) => autoSaveTask({ tags: nextTags })} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={(nextPriority) => autoSaveTask({ priority: nextPriority })} showPriority={false} compactTags />
                 <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
                   <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>
                   <div className="flex items-center gap-2"><RefreshCw aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Updated by</dt><dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd></div>
                 </dl>
+                <TaskCollaboration key={editingTask.id} taskId={editingTask.id} members={members} currentUserId={currentUserId} />
               </div>
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end sm:px-7">
-                <button type="button" onClick={closeEditDrawer} disabled={isSubmitting} className="min-h-11 cursor-pointer rounded-lg border border-slate-300 bg-white px-5 text-sm font-bold text-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">Cancel</button>
-                <button type="submit" disabled={isSubmitting || !title.trim()} className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#173b35] px-5 text-sm font-bold text-white hover:bg-[#204b43] focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50">
-                  {isSubmitting ? <LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> : <Save aria-hidden="true" className="size-4" />}
-                  {isSubmitting ? "Saving..." : "Save changes"}
-                </button>
-              </div>
-            </form>
+            </div>
           </aside>
         </div>
       ) : null}

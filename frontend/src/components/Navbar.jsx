@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, Circle, Clock3, FolderKanban, LayoutDashboard, ListTodo, LogOut, Settings, UserRoundCheck } from "lucide-react";
+import { CheckCircle2, ChevronDown, Circle, FolderKanban, LayoutDashboard, ListTodo, LogOut, Settings, UserRoundCheck } from "lucide-react";
 
 const TASK_FILTERS = [
   { value: "my", label: "My Tasks", icon: UserRoundCheck },
-  { value: "today", label: "Today", icon: CalendarDays },
-  { value: "upcoming", label: "Upcoming", icon: Clock3 },
-  { value: "overdue", label: "Overdue", icon: AlertTriangle },
   { value: "open", label: "Open", icon: Circle },
   { value: "completed", label: "Completed", icon: CheckCircle2 },
   { value: "all", label: "All", icon: ListTodo },

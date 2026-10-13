@@ -8,6 +8,7 @@
 
 ## UI And Interaction
 
+- Prefer minimalist interactions: show only essential actions, consolidate related choices into filters or menus, and avoid redundant buttons that increase decision load.
 - Keep every module and component visually compact and consistent with the existing interface.
 - Build responsive layouts for desktop and mobile without hiding required actions or information.
 - Every enabled button must use a pointer cursor. With Tailwind CSS, include `cursor-pointer`; disabled buttons must communicate their disabled state.

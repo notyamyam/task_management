@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { GripVertical, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUpDown, Check, GripVertical, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import { AssigneeBadge, DueDateBadge, PriorityBadge, TaskTags } from "./TaskAttributes";
 import { getDueDateState, getTaskAssignee, normalizeTaskStatus, TASK_STATUSES } from "./taskPlanning";
@@ -7,12 +7,59 @@ import { getTaskUserName } from "./taskUtils";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const formatDateTime = (value) => value && !Number.isNaN(new Date(value).getTime()) ? DATE_TIME_FORMATTER.format(new Date(value)) : "Not available";
+const BOARD_SORT_OPTIONS = [
+  { value: "title", label: "Task title" },
+  { value: "created_by", label: "Created by" },
+  { value: "updated_by", label: "Updated by" },
+];
+const DEFAULT_BOARD_SORTS = Object.fromEntries(TASK_STATUSES.map((status) => [status.value, "title"]));
+
+const compareBoardTasks = (left, right, sortBy) => {
+  if (sortBy === "title") {
+    return left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" });
+  }
+
+  const userComparison = getTaskUserName(left[sortBy]).localeCompare(
+    getTaskUserName(right[sortBy]),
+    undefined,
+    { numeric: true, sensitivity: "base" },
+  );
+  if (userComparison !== 0) return userComparison;
+
+  const dateField = sortBy === "created_by" ? "created_at" : "updated_at";
+  const leftTime = Date.parse(left[dateField]) || 0;
+  const rightTime = Date.parse(right[dateField]) || 0;
+  return rightTime - leftTime
+    || left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" });
+};
 
 const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) => {
   const dragRef = useRef(null);
+  const sortMenuRef = useRef(null);
+  const sortTriggerRefs = useRef({});
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [dropStatus, setDropStatus] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
+  const [sortByStatus, setSortByStatus] = useState(DEFAULT_BOARD_SORTS);
+  const [openSortStatus, setOpenSortStatus] = useState(null);
+
+  useEffect(() => {
+    if (!openSortStatus) return undefined;
+    const closeSortMenu = (event) => {
+      if (event.key === "Escape") {
+        setOpenSortStatus(null);
+        sortTriggerRefs.current[openSortStatus]?.focus();
+      } else if (event.type === "pointerdown" && !sortMenuRef.current?.contains(event.target)) {
+        setOpenSortStatus(null);
+      }
+    };
+    document.addEventListener("keydown", closeSortMenu);
+    document.addEventListener("pointerdown", closeSortMenu);
+    return () => {
+      document.removeEventListener("keydown", closeSortMenu);
+      document.removeEventListener("pointerdown", closeSortMenu);
+    };
+  }, [openSortStatus]);
 
   const getStatusAtPoint = (clientX, clientY) => (
     document.elementFromPoint(clientX, clientY)?.closest("[data-task-status]")?.dataset.taskStatus ?? null
@@ -58,7 +105,10 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
     <div className="overflow-x-auto pb-2">
       <div className="grid grid-cols-1 gap-3 md:min-w-[64rem] md:grid-cols-4" aria-label="Task board">
         {TASK_STATUSES.map((column) => {
-          const columnTasks = tasks.filter((task) => normalizeTaskStatus(task) === column.value);
+          const columnSort = sortByStatus[column.value];
+          const columnTasks = tasks
+            .filter((task) => normalizeTaskStatus(task) === column.value)
+            .toSorted((left, right) => compareBoardTasks(left, right, columnSort));
           return (
             <section
               key={column.value}
@@ -68,7 +118,42 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
             >
               <header className="flex min-h-12 items-center justify-between border-b border-slate-200 bg-white px-3">
                 <h3 id={`board-${column.value}`} className="flex items-center gap-2 text-sm font-bold"><span className={`size-2.5 rounded-full ${column.dot}`} />{column.label}</h3>
-                <span className="text-xs font-bold tabular-nums text-slate-500">{columnTasks.length}</span>
+                <div ref={openSortStatus === column.value ? sortMenuRef : null} className="relative flex items-center gap-1">
+                  <span className="mr-1 text-xs font-bold tabular-nums text-slate-500">{columnTasks.length}</span>
+                  <button
+                    ref={(node) => { sortTriggerRefs.current[column.value] = node; }}
+                    type="button"
+                    onClick={() => setOpenSortStatus((current) => current === column.value ? null : column.value)}
+                    aria-label={`Sort ${column.label} tasks. Current sort: ${BOARD_SORT_OPTIONS.find((option) => option.value === columnSort)?.label}`}
+                    aria-haspopup="menu"
+                    aria-expanded={openSortStatus === column.value}
+                    title={`Sort ${column.label}`}
+                    className={`grid size-9 cursor-pointer place-items-center rounded-md focus-visible:outline-3 focus-visible:outline-emerald-800 ${openSortStatus === column.value ? "bg-[#173b35] text-white" : "text-slate-500 hover:bg-slate-100"}`}
+                  >
+                    <ArrowUpDown aria-hidden="true" className="size-4" />
+                  </button>
+                  {openSortStatus === column.value ? (
+                    <div role="menu" aria-label={`Sort ${column.label} tasks`} className="absolute top-full right-0 z-30 mt-1 w-40 rounded-lg border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl">
+                      {BOARD_SORT_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={columnSort === option.value}
+                          onClick={() => {
+                            setSortByStatus((current) => ({ ...current, [column.value]: option.value }));
+                            setOpenSortStatus(null);
+                            sortTriggerRefs.current[column.value]?.focus();
+                          }}
+                          className="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-2.5 text-left text-xs font-semibold hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-emerald-800"
+                        >
+                          <span className="flex-1">{option.label}</span>
+                          {columnSort === option.value ? <Check aria-hidden="true" className="size-4 text-emerald-800" /> : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </header>
               <ul className="space-y-2 p-2.5">
                 {columnTasks.map((task) => (

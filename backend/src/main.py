@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from .routers import ai, project, task, user
 from .database import Base, engine, migrate_existing_schema
 from fastapi.middleware.cors import CORSMiddleware
-from .models import Project, ProjectMember, Task
+from .models import Project, ProjectMember, Task, TaskActivity, TaskComment
 from .security.config import settings
 
 app = FastAPI()
@@ -13,7 +13,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Report-Task-Count"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Report-Task-Count",
+        "X-Total-Count",
+        "X-Page",
+        "X-Page-Size",
+        "X-Total-Pages",
+    ],
 )
 migrate_existing_schema()
 Base.metadata.create_all(bind=engine)

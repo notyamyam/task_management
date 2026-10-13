@@ -228,7 +228,7 @@ const ProjectDetails = () => {
         </header>
 
         <div className="grid gap-5 py-5 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
-          <ProjectTaskList projectId={projectId} projectName={project.name} members={people} userKey={profile?.id ?? profile?.email} />
+          <ProjectTaskList projectId={projectId} projectName={project.name} members={people} userKey={profile?.id ?? profile?.email} currentUserId={profile?.id} />
 
           <section aria-labelledby="members-heading" className="self-start bg-white shadow-[0_1px_3px_rgba(15,23,42,0.08)] ring-1 ring-slate-200 lg:sticky lg:top-5">
             <div className="flex min-h-14 items-center justify-between gap-2 border-b border-slate-200 px-4">

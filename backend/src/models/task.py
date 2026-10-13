@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -44,6 +45,47 @@ class Task(Base):
         index=True,
     )
     tags = Column(JSONB, nullable=False, default=list)
-    priority = Column(String(10), nullable=False, default="medium")
+    priority = Column(String(10), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(
+        Integer,
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    body = Column(Text, nullable=False)
+    mentioned_user_ids = Column(JSONB, nullable=False, default=list)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class TaskActivity(Base):
+    __tablename__ = "task_activity"
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('task_created', 'comment_added', 'status_changed', "
+            "'assignment_changed', 'priority_changed', 'due_date_changed')",
+            name="ck_task_activity_event_type",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(
+        Integer,
+        ForeignKey("tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    event_type = Column(String(30), nullable=False)
+    field_name = Column(String(30), nullable=True)
+    old_value = Column(String(255), nullable=True)
+    new_value = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
