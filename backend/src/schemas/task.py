@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 TagColor = Literal["slate", "emerald", "blue", "violet", "amber", "rose"]
@@ -107,6 +107,9 @@ class TaskResponse(BaseModel):
     priority: Literal["low", "medium", "high"] | None
     created_at: datetime
     updated_at: datetime
+    subtask_count: int = 0
+    completed_subtask_count: int = 0
+    unresolved_dependency_count: int = 0
 
 
 class TaskCommentCreate(BaseModel):
@@ -150,4 +153,100 @@ class TaskActivityResponse(BaseModel):
     old_value: str | None
     new_value: str | None
     actor: TaskUserResponse
+    created_at: datetime
+
+
+class SubtaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    completed: bool = False
+    assignee_user_id: int | None = Field(default=None, gt=0)
+    due_date: date | None = None
+    position: int = Field(default=0, ge=0, le=100000)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("Subtask title cannot be empty")
+        return title
+
+    @field_validator("description")
+    @classmethod
+    def normalize_subtask_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class SubtaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
+    completed: bool | None = None
+    assignee_user_id: int | None = Field(default=None, gt=0)
+    due_date: date | None = None
+    position: int | None = Field(default=None, ge=0, le=100000)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_optional_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        title = value.strip()
+        if not title:
+            raise ValueError("Subtask title cannot be empty")
+        return title
+
+    @field_validator("description")
+    @classmethod
+    def normalize_optional_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    @model_validator(mode="after")
+    def require_update(self):
+        if not self.model_fields_set:
+            raise ValueError("At least one subtask field is required")
+        non_nullable_fields = {"title", "completed", "position"}
+        if any(
+            field in self.model_fields_set and getattr(self, field) is None
+            for field in non_nullable_fields
+        ):
+            raise ValueError("title, completed, and position cannot be null")
+        return self
+
+
+class SubtaskResponse(BaseModel):
+    id: int
+    task_id: int
+    title: str
+    description: str | None
+    completed: bool
+    assignee_user_id: int | None
+    assignee: TaskUserResponse | None
+    due_date: date | None
+    position: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class TaskDependencyCreate(BaseModel):
+    blocked_by_task_id: int = Field(gt=0)
+
+
+class DependencyTaskResponse(BaseModel):
+    id: int
+    title: str
+    status: TaskStatus
+    completed: bool
+    due_date: date | None
+
+
+class TaskDependencyResponse(BaseModel):
+    id: int
+    task_id: int
+    blocked_by_task: DependencyTaskResponse
+    resolved: bool
     created_at: datetime

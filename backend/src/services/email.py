@@ -28,6 +28,25 @@ def send_password_reset_otp(recipient: str, otp: str) -> None:
         "reset, you can ignore this email."
     )
 
+    _send_message(message)
+
+
+def send_task_reminder(recipient: str, task_title: str, reminder_text: str) -> None:
+    if not is_smtp_configured():
+        raise RuntimeError("Secure SMTP is not configured")
+
+    message = EmailMessage()
+    message["Subject"] = f"Task reminder: {task_title}"
+    message["From"] = settings.smtp_from_email
+    message["To"] = recipient
+    message.set_content(
+        f"{reminder_text}\n\nTask: {task_title}\n\n"
+        "Open Corner to review this task."
+    )
+    _send_message(message)
+
+
+def _send_message(message: EmailMessage) -> None:
     context = ssl.create_default_context()
     if settings.smtp_use_ssl:
         server = smtplib.SMTP_SSL(

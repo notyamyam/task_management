@@ -256,7 +256,7 @@ const ProjectDetails = () => {
 
       {isEditDrawerOpen ? (
         <div className="fixed inset-0 z-50 bg-slate-950/45" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditDrawer(); }}>
-          <aside role="dialog" aria-modal="true" aria-labelledby="edit-project-title" className="ml-auto flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
+          <aside role="dialog" aria-modal="true" aria-labelledby="edit-project-title" className="ml-auto flex h-full w-full flex-col bg-white shadow-2xl md:w-1/2">
             <div className="flex min-h-16 items-center justify-between border-b border-slate-200 px-5 sm:px-7">
               <div><p className="text-[10px] font-bold tracking-[0.14em] text-emerald-800 uppercase">Project settings</p><h2 id="edit-project-title" className="text-lg font-semibold">Edit project</h2></div>
               <button type="button" onClick={closeEditDrawer} disabled={isSaving} aria-label="Close project editor" className="grid size-11 cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"><X aria-hidden="true" className="size-5" /></button>

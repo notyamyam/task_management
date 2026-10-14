@@ -5,20 +5,36 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 
 from ..database import get_db
-from ..models import Project, ProjectMember, Task, TaskActivity, TaskComment, User
+from ..models import (
+    Project,
+    ProjectMember,
+    Subtask,
+    Task,
+    TaskActivity,
+    TaskComment,
+    TaskDependency,
+    User,
+)
 from ..schemas import (
+    SubtaskCreate,
+    SubtaskResponse,
+    SubtaskUpdate,
     TaskActivityResponse,
     TaskCommentCreate,
     TaskCommentResponse,
     TaskCommentUpdate,
     TaskCreate,
+    TaskDependencyCreate,
+    TaskDependencyResponse,
     TaskResponse,
     TaskStatus,
     TaskStatusUpdate,
 )
 from ..security import auth
+from ..services.notifications import add_notification
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 TAG_COLORS = {"slate", "emerald", "blue", "violet", "amber", "rose"}
@@ -253,6 +269,17 @@ def commit_task(db):
         ) from error
 
 
+def commit_task_structure(db, detail):
+    try:
+        db.commit()
+    except IntegrityError as error:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
+        ) from error
+
+
 def serialize_user(user):
     if not user:
         return None
@@ -297,6 +324,18 @@ def serialize_task(task, db):
     creator = db.query(User).filter(User.id == task.user_id).first()
     updater = db.query(User).filter(User.id == task.updated_by_user_id).first()
     assignee = db.query(User).filter(User.id == task.assignee_user_id).first()
+    subtask_count = db.query(Subtask).filter(Subtask.task_id == task.id).count()
+    completed_subtask_count = (
+        db.query(Subtask)
+        .filter(Subtask.task_id == task.id, Subtask.completed.is_(True))
+        .count()
+    )
+    unresolved_dependency_count = (
+        db.query(TaskDependency.id)
+        .join(Task, Task.id == TaskDependency.blocked_by_task_id)
+        .filter(TaskDependency.task_id == task.id, Task.status != "done")
+        .count()
+    )
 
     return {
         "id": task.id,
@@ -316,7 +355,24 @@ def serialize_task(task, db):
         "priority": task.priority,
         "created_at": task.created_at,
         "updated_at": task.updated_at,
+        "subtask_count": subtask_count,
+        "completed_subtask_count": completed_subtask_count,
+        "unresolved_dependency_count": unresolved_dependency_count,
     }
+
+
+def ensure_dependencies_resolved(task, db):
+    unresolved = (
+        db.query(TaskDependency.id)
+        .join(Task, Task.id == TaskDependency.blocked_by_task_id)
+        .filter(TaskDependency.task_id == task.id, Task.status != "done")
+        .first()
+    )
+    if unresolved:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task cannot be completed while dependencies are unresolved",
+        )
 
 
 @router.post("/create-task", response_model=TaskResponse)
@@ -360,6 +416,16 @@ def create_task(
         current_user.id,
         "task_created",
     )
+    if new_task.assignee_user_id is not None:
+        add_notification(
+            db,
+            user_id=new_task.assignee_user_id,
+            actor_user_id=current_user.id,
+            task_id=new_task.id,
+            notification_type="assignment",
+            title="Task assigned to you",
+            body=f'You were assigned “{new_task.title}”.',
+        )
     commit_task(db)
     db.refresh(new_task)
     return serialize_task(new_task, db)
@@ -504,6 +570,289 @@ def get_task(
     return serialize_task(get_accessible_task(task_id, current_user, db), db)
 
 
+def serialize_subtask(subtask, db):
+    assignee = db.query(User).filter(User.id == subtask.assignee_user_id).first()
+    return {
+        "id": subtask.id,
+        "task_id": subtask.task_id,
+        "title": subtask.title,
+        "description": subtask.description,
+        "completed": subtask.completed,
+        "assignee_user_id": subtask.assignee_user_id,
+        "assignee": serialize_user(assignee),
+        "due_date": subtask.due_date,
+        "position": subtask.position,
+        "created_at": subtask.created_at,
+        "updated_at": subtask.updated_at,
+    }
+
+
+def validate_subtask_assignee(task, assignee_user_id, current_user, db):
+    if assignee_user_id is None:
+        return
+    if task.project_id is None:
+        raise HTTPException(status_code=422, detail="Assigned subtasks require a project")
+    project = get_accessible_project(task.project_id, current_user, db)
+    get_project_assignee(project, assignee_user_id, db)
+
+
+@router.get("/{task_id}/subtasks", response_model=list[SubtaskResponse])
+def get_subtasks(
+    task_id: int,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    subtasks = (
+        db.query(Subtask)
+        .filter(Subtask.task_id == task.id)
+        .order_by(Subtask.position.asc(), Subtask.created_at.asc(), Subtask.id.asc())
+        .all()
+    )
+    return [serialize_subtask(subtask, db) for subtask in subtasks]
+
+
+@router.post(
+    "/{task_id}/subtasks",
+    response_model=SubtaskResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_subtask(
+    task_id: int,
+    payload: SubtaskCreate,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    validate_subtask_assignee(task, payload.assignee_user_id, current_user, db)
+    subtask = Subtask(task_id=task.id, **payload.model_dump())
+    db.add(subtask)
+    if subtask.assignee_user_id is not None:
+        add_notification(
+            db,
+            user_id=subtask.assignee_user_id,
+            actor_user_id=current_user.id,
+            task_id=task.id,
+            notification_type="assignment",
+            title="Subtask assigned to you",
+            body=f'You were assigned “{subtask.title}” on “{task.title}”.',
+        )
+    commit_task_structure(
+        db, "Subtask could not be saved because task access changed"
+    )
+    db.refresh(subtask)
+    return serialize_subtask(subtask, db)
+
+
+@router.patch("/{task_id}/subtasks/{subtask_id}", response_model=SubtaskResponse)
+def update_subtask(
+    task_id: int,
+    subtask_id: int,
+    payload: SubtaskUpdate,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    subtask = (
+        db.query(Subtask)
+        .filter(Subtask.id == subtask_id, Subtask.task_id == task.id)
+        .first()
+    )
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    old_assignee_user_id = subtask.assignee_user_id
+    if "assignee_user_id" in payload.model_fields_set:
+        validate_subtask_assignee(task, payload.assignee_user_id, current_user, db)
+    for field in payload.model_fields_set:
+        setattr(subtask, field, getattr(payload, field))
+    if (
+        subtask.assignee_user_id is not None
+        and subtask.assignee_user_id != old_assignee_user_id
+    ):
+        add_notification(
+            db,
+            user_id=subtask.assignee_user_id,
+            actor_user_id=current_user.id,
+            task_id=task.id,
+            notification_type="assignment",
+            title="Subtask assigned to you",
+            body=f'You were assigned “{subtask.title}” on “{task.title}”.',
+        )
+    commit_task_structure(
+        db, "Subtask could not be saved because task access changed"
+    )
+    db.refresh(subtask)
+    return serialize_subtask(subtask, db)
+
+
+@router.delete(
+    "/{task_id}/subtasks/{subtask_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_subtask(
+    task_id: int,
+    subtask_id: int,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    subtask = (
+        db.query(Subtask)
+        .filter(Subtask.id == subtask_id, Subtask.task_id == task.id)
+        .first()
+    )
+    if not subtask:
+        raise HTTPException(status_code=404, detail="Subtask not found")
+    db.delete(subtask)
+    commit_task_structure(
+        db, "Subtask could not be deleted because task access changed"
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def project_dependency_edges(project_id, db):
+    source_task = aliased(Task)
+    blocker_task = aliased(Task)
+    rows = (
+        db.query(TaskDependency.task_id, TaskDependency.blocked_by_task_id)
+        .join(source_task, source_task.id == TaskDependency.task_id)
+        .join(blocker_task, blocker_task.id == TaskDependency.blocked_by_task_id)
+        .filter(
+            source_task.project_id == project_id,
+            blocker_task.project_id == project_id,
+        )
+        .all()
+    )
+    edges = {}
+    for source_id, blocker_id in rows:
+        edges.setdefault(source_id, set()).add(blocker_id)
+    return edges
+
+
+def dependency_would_cycle(task_id, blocked_by_task_id, project_id, db):
+    edges = project_dependency_edges(project_id, db)
+    pending = [blocked_by_task_id]
+    visited = set()
+    while pending:
+        current_id = pending.pop()
+        if current_id == task_id:
+            return True
+        if current_id in visited:
+            continue
+        visited.add(current_id)
+        pending.extend(edges.get(current_id, ()))
+    return False
+
+
+def serialize_dependency(dependency, db):
+    blocker = db.query(Task).filter(Task.id == dependency.blocked_by_task_id).first()
+    return {
+        "id": dependency.id,
+        "task_id": dependency.task_id,
+        "blocked_by_task": {
+            "id": blocker.id,
+            "title": blocker.title,
+            "status": blocker.status,
+            "completed": blocker.completed,
+            "due_date": blocker.due_date,
+        },
+        "resolved": blocker.status == "done",
+        "created_at": dependency.created_at,
+    }
+
+
+@router.get("/{task_id}/dependencies", response_model=list[TaskDependencyResponse])
+def get_task_dependencies(
+    task_id: int,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    dependencies = (
+        db.query(TaskDependency)
+        .filter(TaskDependency.task_id == task.id)
+        .order_by(TaskDependency.created_at.asc(), TaskDependency.id.asc())
+        .all()
+    )
+    return [serialize_dependency(dependency, db) for dependency in dependencies]
+
+
+@router.post(
+    "/{task_id}/dependencies",
+    response_model=TaskDependencyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_task_dependency(
+    task_id: int,
+    payload: TaskDependencyCreate,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    blocker = get_accessible_task(payload.blocked_by_task_id, current_user, db)
+    if task.id == blocker.id:
+        raise HTTPException(status_code=422, detail="A task cannot depend on itself")
+    if task.project_id is None or task.project_id != blocker.project_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Dependencies must link tasks in the same project",
+        )
+    if task.status == "done" and blocker.status != "done":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot add an unresolved dependency to a completed task",
+        )
+    existing = (
+        db.query(TaskDependency.id)
+        .filter(
+            TaskDependency.task_id == task.id,
+            TaskDependency.blocked_by_task_id == blocker.id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Task dependency already exists")
+    if dependency_would_cycle(task.id, blocker.id, task.project_id, db):
+        raise HTTPException(status_code=422, detail="Task dependency would create a cycle")
+
+    dependency = TaskDependency(
+        task_id=task.id,
+        blocked_by_task_id=blocker.id,
+        created_by_user_id=current_user.id,
+    )
+    db.add(dependency)
+    commit_task_structure(
+        db,
+        "Task dependency could not be saved because access changed or it already exists",
+    )
+    db.refresh(dependency)
+    return serialize_dependency(dependency, db)
+
+
+@router.delete(
+    "/{task_id}/dependencies/{dependency_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_task_dependency(
+    task_id: int,
+    dependency_id: int,
+    db=Depends(get_db),
+    current_user=Depends(get_current_complete_user),
+):
+    task = get_accessible_task(task_id, current_user, db)
+    dependency = (
+        db.query(TaskDependency)
+        .filter(TaskDependency.id == dependency_id, TaskDependency.task_id == task.id)
+        .first()
+    )
+    if not dependency:
+        raise HTTPException(status_code=404, detail="Task dependency not found")
+    db.delete(dependency)
+    commit_task_structure(
+        db, "Task dependency could not be deleted because task access changed"
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def serialize_comment(comment, db):
     author = db.query(User).filter(User.id == comment.user_id).first()
     mentioned_ids = comment.mentioned_user_ids or []
@@ -567,6 +916,16 @@ def create_task_comment(
         mentioned_user_ids=payload.mentioned_user_ids,
     )
     db.add(comment)
+    for mentioned_user_id in payload.mentioned_user_ids:
+        add_notification(
+            db,
+            user_id=mentioned_user_id,
+            actor_user_id=current_user.id,
+            task_id=task.id,
+            notification_type="mention",
+            title="You were mentioned",
+            body=f'You were mentioned in a comment on “{task.title}”.',
+        )
     add_task_activity(
         db,
         task.id,
@@ -615,8 +974,19 @@ def update_task_comment(
         project, payload.body, payload.mentioned_user_ids, current_user, db
     )
 
+    newly_mentioned_ids = set(payload.mentioned_user_ids) - set(comment.mentioned_user_ids or [])
     comment.body = payload.body
     comment.mentioned_user_ids = payload.mentioned_user_ids
+    for mentioned_user_id in newly_mentioned_ids:
+        add_notification(
+            db,
+            user_id=mentioned_user_id,
+            actor_user_id=current_user.id,
+            task_id=task.id,
+            notification_type="mention",
+            title="You were mentioned",
+            body=f'You were mentioned in a comment on “{task.title}”.',
+        )
     commit_task(db)
     db.refresh(comment)
     return serialize_comment(comment, db)
@@ -694,6 +1064,18 @@ def update_task(
     old_due_date = existing_task.due_date
     if existing_task.project_id is not None and task.project_id is None:
         raise HTTPException(status_code=422, detail="Select a project for this task")
+    if task.project_id != existing_task.project_id:
+        has_dependencies = db.query(TaskDependency.id).filter(
+            or_(
+                TaskDependency.task_id == existing_task.id,
+                TaskDependency.blocked_by_task_id == existing_task.id,
+            )
+        ).first()
+        if has_dependencies:
+            raise HTTPException(
+                status_code=409,
+                detail="Remove task dependencies before changing the project",
+            )
     project = None
     if task.project_id is not None:
         project = get_accessible_project(task.project_id, current_user, db)
@@ -726,6 +1108,8 @@ def update_task(
     elif "completed" in task.model_fields_set and completed_changed:
         existing_task.status = "done" if task.completed else "backlog"
         existing_task.completed = task.completed
+    if existing_task.status == "done" and old_status != "done":
+        ensure_dependencies_resolved(existing_task, db)
     existing_task.updated_by_user_id = current_user.id
 
     if existing_task.status != old_status:
@@ -742,6 +1126,16 @@ def update_task(
             user_activity_label(old_assignee),
             user_activity_label(new_assignee),
         )
+        if existing_task.assignee_user_id is not None:
+            add_notification(
+                db,
+                user_id=existing_task.assignee_user_id,
+                actor_user_id=current_user.id,
+                task_id=existing_task.id,
+                notification_type="assignment",
+                title="Task assigned to you",
+                body=f'You were assigned “{existing_task.title}”.',
+            )
     if existing_task.priority != old_priority:
         add_task_activity(
             db,
@@ -762,6 +1156,20 @@ def update_task(
             old_due_date.isoformat() if old_due_date else None,
             existing_task.due_date.isoformat() if existing_task.due_date else None,
         )
+    if existing_task.status != old_status and existing_task.assignee_user_id is not None:
+        add_notification(
+            db,
+            user_id=existing_task.assignee_user_id,
+            actor_user_id=current_user.id,
+            task_id=existing_task.id,
+            notification_type="status_change",
+            title="Task status changed",
+            body=(
+                f'“{existing_task.title}” moved from '
+                f'{old_status.replace("_", " ")} to '
+                f'{existing_task.status.replace("_", " ")}.'
+            ),
+        )
 
     commit_task(db)
     db.refresh(existing_task)
@@ -777,6 +1185,8 @@ def update_task_status(
 ):
     task = get_accessible_task(id, current_user, db)
     old_status = task.status
+    if payload.status == "done" and old_status != "done":
+        ensure_dependencies_resolved(task, db)
     task.status = payload.status
     task.completed = payload.status == "done"
     task.updated_by_user_id = current_user.id
@@ -784,6 +1194,19 @@ def update_task_status(
         add_task_activity(
             db, id, current_user.id, "status_changed", "status", old_status, task.status
         )
+        if task.assignee_user_id is not None:
+            add_notification(
+                db,
+                user_id=task.assignee_user_id,
+                actor_user_id=current_user.id,
+                task_id=task.id,
+                notification_type="status_change",
+                title="Task status changed",
+                body=(
+                    f'“{task.title}” moved from {old_status.replace("_", " ")} '
+                    f'to {task.status.replace("_", " ")}.'
+                ),
+            )
     commit_task(db)
     db.refresh(task)
     return serialize_task(task, db)

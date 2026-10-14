@@ -1,8 +1,18 @@
 from fastapi import FastAPI
-from .routers import ai, project, task, user
+from .routers import ai, notification, project, task, user
 from .database import Base, engine, migrate_existing_schema
 from fastapi.middleware.cors import CORSMiddleware
-from .models import Project, ProjectMember, Task, TaskActivity, TaskComment
+from .models import (
+    Notification,
+    NotificationPreference,
+    Project,
+    ProjectMember,
+    Subtask,
+    Task,
+    TaskActivity,
+    TaskComment,
+    TaskDependency,
+)
 from .security.config import settings
 
 app = FastAPI()
@@ -33,3 +43,4 @@ app.include_router(task.router)
 app.include_router(user.router)
 app.include_router(project.router)
 app.include_router(ai.router)
+app.include_router(notification.router)

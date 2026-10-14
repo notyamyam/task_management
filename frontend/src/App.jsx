@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
+import TopNavbar from "./components/TopNavbar";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 import Task from "./components/Task";
@@ -121,12 +122,14 @@ const DashboardLayout = () => {
         <Navbar
           filter={filter}
           onFilterChange={setFilter}
-          profile={profile}
           projects={projects}
         />
-        <main className="grid min-w-0 flex-1 place-items-center px-4 text-sm font-semibold text-slate-600" role="status">
-          Loading your account...
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <TopNavbar profile={profile} />
+          <main className="grid min-w-0 flex-1 place-items-center px-4 text-sm font-semibold text-slate-600" role="status">
+            Loading your account...
+          </main>
+        </div>
       </div>
     );
   }
@@ -144,28 +147,30 @@ const DashboardLayout = () => {
       <Navbar
         filter={filter}
         onFilterChange={setFilter}
-        profile={profile}
         projects={projects}
       />
-      <Outlet context={{
-        filter,
-        onFilterChange: setFilter,
-        profile,
-        isProfileLoading,
-        profileError,
-        loadProfile,
-        onProfileChange: setProfile,
-        projects,
-        isProjectsLoading,
-        projectsError,
-        loadProjects,
-        isAddProjectOpen,
-        onAddProjectOpen: () => setIsAddProjectOpen(true),
-        onAddProjectClose: () => setIsAddProjectOpen(false),
-        onProjectCreated: addProjectToList,
-        onProjectUpdated: updateProjectInList,
-        onProjectDeleted: removeProjectFromList,
-      }} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopNavbar profile={profile} />
+        <Outlet context={{
+          filter,
+          onFilterChange: setFilter,
+          profile,
+          isProfileLoading,
+          profileError,
+          loadProfile,
+          onProfileChange: setProfile,
+          projects,
+          isProjectsLoading,
+          projectsError,
+          loadProjects,
+          isAddProjectOpen,
+          onAddProjectOpen: () => setIsAddProjectOpen(true),
+          onAddProjectClose: () => setIsAddProjectOpen(false),
+          onProjectCreated: addProjectToList,
+          onProjectUpdated: updateProjectInList,
+          onProjectDeleted: removeProjectFromList,
+        }} />
+      </div>
       {showChatAssistant ? (
         <ChatAssistant
           key={chatProjectId ? `project-${chatProjectId}` : "workspace"}

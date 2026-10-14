@@ -21,3 +21,14 @@ body {
   width: 100%;
   min-height: 100svh;
 }
+
+@media (min-width: 768px) {
+  [aria-labelledby="edit-task-drawer-title"] {
+    width: 50%;
+    max-width: none;
+  }
+
+  [aria-labelledby="edit-task-drawer-title"]:has([aria-label="Exit fullscreen task view"]) {
+    width: 100%;
+  }
+}

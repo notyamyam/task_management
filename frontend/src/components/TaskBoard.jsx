@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpDown, Check, GripVertical, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { ArrowUpDown, Check, GripVertical, RefreshCw, Trash2, UserRound } from "lucide-react";
 
 import { AssigneeBadge, DueDateBadge, PriorityBadge, TaskTags } from "./TaskAttributes";
 import { getDueDateState, getTaskAssignee, normalizeTaskStatus, TASK_STATUSES } from "./taskPlanning";
 import { getTaskUserName } from "./taskUtils";
+import { TaskStructureBadges } from "./TaskStructure";
 
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const formatDateTime = (value) => value && !Number.isNaN(new Date(value).getTime()) ? DATE_TIME_FORMATTER.format(new Date(value)) : "Not available";
@@ -159,8 +160,9 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
                 {columnTasks.map((task) => (
                   <li
                     key={task.id}
-                    className={`bg-white p-3 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md ${draggedTaskId === task.id ? "opacity-60" : ""}`}
+                    className={`group relative bg-white p-3 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md ${draggedTaskId === task.id ? "opacity-60" : ""}`}
                   >
+                    <button type="button" onClick={() => onEdit(task)} aria-label={`Edit ${task.title}`} className="absolute inset-0 cursor-pointer transition-colors hover:bg-slate-950/[0.025] focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-emerald-800" />
                     <div className="flex items-start gap-2">
                       <span
                         onPointerDown={(event) => handlePointerDown(event, task)}
@@ -168,7 +170,7 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
                         onPointerUp={handlePointerUp}
                         onPointerCancel={clearDrag}
                         title={`Drag ${task.title}`}
-                        className={`-m-2 mt-[-0.375rem] grid size-8 flex-none touch-none place-items-center text-slate-400 select-none ${updatingTaskId === task.id ? "cursor-wait opacity-50" : "cursor-grab active:cursor-grabbing"}`}
+                        className={`relative z-10 -m-2 mt-[-0.375rem] grid size-8 flex-none touch-none place-items-center text-slate-400 select-none ${updatingTaskId === task.id ? "cursor-wait opacity-50" : "cursor-grab active:cursor-grabbing"}`}
                       >
                         <GripVertical aria-hidden="true" className="size-4" />
                       </span>
@@ -182,6 +184,7 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
                       <AssigneeBadge assignee={getTaskAssignee(task)} />
                       <PriorityBadge priority={task.priority} />
                       <TaskTags tags={task.tags} />
+                      <TaskStructureBadges task={task} />
                     </div>
                     <dl className="mt-3 space-y-1.5 border-t border-slate-100 pt-2 text-[11px] leading-4 text-slate-500">
                       <div className="flex items-start gap-1.5"><UserRound aria-hidden="true" className="mt-0.5 size-3.5 flex-none" /><dt className="sr-only">Created by</dt><dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd></div>
@@ -194,12 +197,11 @@ const TaskBoard = ({ tasks, onStatusChange, onEdit, onDelete, updatingTaskId }) 
                         value={normalizeTaskStatus(task)}
                         disabled={updatingTaskId === task.id}
                         onChange={(event) => onStatusChange(task, event.target.value)}
-                        className="h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold outline-none focus:border-emerald-800 focus:ring-2 focus:ring-emerald-800/20 disabled:cursor-wait"
+                        className="relative z-10 h-9 min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold outline-none focus:border-emerald-800 focus:ring-2 focus:ring-emerald-800/20 disabled:cursor-wait"
                       >
                         {TASK_STATUSES.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
                       </select>
-                      <button type="button" onClick={() => onEdit(task)} aria-label={`Edit ${task.title}`} className="grid size-9 cursor-pointer place-items-center rounded-md text-slate-500 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button>
-                      <button type="button" onClick={() => onDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-9 cursor-pointer place-items-center rounded-md text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
+                      <button type="button" onClick={() => onDelete(task)} aria-label={`Delete ${task.title}`} className="relative z-10 grid size-9 cursor-pointer place-items-center rounded-md text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
                     </div>
                   </li>
                 ))}

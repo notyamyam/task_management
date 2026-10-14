@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Circle, Columns3, FileDown, List, ListTodo, LoaderCircle, Maximize2, Minimize2, Pencil, Plus, RefreshCw, Trash2, UserRound, X } from "lucide-react";
+import { Check, Circle, Columns3, FileDown, List, ListTodo, LoaderCircle, Maximize2, Minimize2, Plus, RefreshCw, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "react-toastify";
 
 import { ENDPOINTS, instance } from "./api";
@@ -15,6 +15,7 @@ import {
 } from "./TaskAttributes";
 import TaskBoard from "./TaskBoard";
 import TaskCollaboration from "./TaskCollaboration";
+import TaskStructure, { TaskStructureBadges } from "./TaskStructure";
 import { buildTaskPayload, getDueDateState, getTaskAssignee, getTaskListBackground, normalizeTaskStatus } from "./taskPlanning";
 import {
   getTaskTagSuggestions,
@@ -278,6 +279,10 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
   };
 
   const updateStatus = async (task, nextStatus) => {
+    if (nextStatus === "done" && Number(task.unresolved_dependency_count ?? task.blocked_by_count ?? 0) > 0) {
+      toast.error("Complete this task's blocking dependencies first.");
+      return;
+    }
     setUpdatingTaskId(task.id);
     try {
       const response = await instance.patch(ENDPOINTS.UPDATE_TASK_STATUS(task.id), { status: nextStatus });
@@ -393,19 +398,19 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
         ) : (
           <ul className="divide-y divide-slate-200">
             {tasks.map((task) => (
-              <li key={task.id} className={`flex min-h-16 items-start gap-2 px-2 py-2 transition-colors sm:px-4 ${getTaskListBackground(task)}`}>
-                <button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-white/70 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
+              <li key={task.id} className={`relative flex min-h-16 items-start gap-2 px-2 py-2 transition-colors sm:px-4 ${getTaskListBackground(task)}`}>
+                <button type="button" onClick={() => openEditForm(task)} aria-label={`Edit ${task.title}`} className="absolute inset-0 cursor-pointer transition-colors hover:bg-slate-950/[0.025] focus-visible:outline-3 focus-visible:outline-offset-[-3px] focus-visible:outline-emerald-800" />
+                <button type="button" disabled={updatingTaskId === task.id} onClick={() => updateStatus(task, normalizeTaskStatus(task) === "done" ? "backlog" : "done")} aria-label={normalizeTaskStatus(task) === "done" ? `Move ${task.title} to backlog` : `Mark ${task.title} done`} className="relative z-10 grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-400 hover:bg-white/70 hover:text-emerald-800 focus-visible:outline-3 focus-visible:outline-emerald-800 disabled:cursor-wait">{normalizeTaskStatus(task) === "done" ? <Check aria-hidden="true" className="size-5" /> : <Circle aria-hidden="true" className="size-5" />}</button>
                 <div className="min-w-0 flex-1 py-2">
                   <p className={`break-words text-sm font-semibold ${normalizeTaskStatus(task) === "done" ? "text-slate-500 line-through" : "text-slate-800"}`}>{task.title}</p>
                   {task.description ? <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-500">{task.description}</p> : null}
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5"><StatusBadge status={normalizeTaskStatus(task)} /><DueDateBadge dueDate={task.due_date} state={getDueDateState(task)} /><AssigneeBadge assignee={getTaskAssignee(task)} /><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /></div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5"><StatusBadge status={normalizeTaskStatus(task)} /><DueDateBadge dueDate={task.due_date} state={getDueDateState(task)} /><AssigneeBadge assignee={getTaskAssignee(task)} /><PriorityBadge priority={task.priority} /><TaskTags tags={task.tags} /><TaskStructureBadges task={task} /></div>
                   <dl className="mt-2 flex flex-col gap-1 text-[11px] text-slate-500 xl:flex-row xl:gap-4">
                     <div className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Created by</dt><dd>Created by {getTaskUserName(task.created_by)} · {formatDateTime(task.created_at)}</dd></div>
                     <div className="flex items-center gap-1.5"><RefreshCw aria-hidden="true" className="size-3.5 flex-none" /><dt className="sr-only">Updated by</dt><dd>Updated by {getTaskUserName(task.updated_by)} · {formatDateTime(task.updated_at)}</dd></div>
                   </dl>
                 </div>
-                <button type="button" onClick={() => openEditForm(task)} aria-label={`Edit ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-white/70 hover:text-slate-950 focus-visible:outline-3 focus-visible:outline-emerald-800"><Pencil aria-hidden="true" className="size-4" /></button>
-                <button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-100 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
+                <button type="button" onClick={() => setTaskToDelete(task)} aria-label={`Delete ${task.title}`} className="relative z-10 grid size-11 flex-none cursor-pointer place-items-center rounded-lg text-slate-500 hover:bg-red-100 hover:text-red-700 focus-visible:outline-3 focus-visible:outline-red-700"><Trash2 aria-hidden="true" className="size-4" /></button>
               </li>
             ))}
           </ul>
@@ -439,7 +444,7 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-project-task-drawer-title"
-            className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-[transform,max-width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:border-l sm:border-slate-200 ${isEditFullscreen ? "max-w-none" : "sm:max-w-xl"} ${isEditDrawerVisible ? "translate-x-0" : "translate-x-full"}`}
+            className={`flex h-svh w-full transform-gpu flex-col bg-white shadow-2xl transition-[transform,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none sm:border-l sm:border-slate-200 ${isEditFullscreen ? "" : "md:w-1/2"} ${isEditDrawerVisible ? "translate-x-0" : "translate-x-full"}`}
             onKeyDown={(event) => {
               if (event.key === "Escape") closeEditDrawer();
             }}
@@ -460,12 +465,13 @@ const ProjectTaskList = ({ projectId, projectName, members = [], userKey = "user
             <div className="flex min-h-0 flex-1 flex-col">
               <div className={`flex-1 overflow-y-auto px-5 py-6 sm:px-7 sm:py-8 ${isEditFullscreen ? "mx-auto w-full max-w-5xl" : ""}`}>
                 <TaskEditableOverview idPrefix="edit-project-task" title={title} description={description} onTitleChange={(nextTitle) => autoSaveTask({ title: nextTitle })} onDescriptionChange={(nextDescription) => autoSaveTask({ description: nextDescription })} priority={priority} onPriorityChange={(nextPriority) => autoSaveTask({ priority: nextPriority })} />
-                <TaskPlanningFields idPrefix="edit-project-task" dueDate={dueDate} onDueDateChange={(nextDueDate) => autoSaveTask({ dueDate: nextDueDate })} status={status} onStatusChange={(nextStatus) => autoSaveTask({ status: nextStatus })} assigneeId={assigneeId} onAssigneeChange={(nextAssigneeId) => autoSaveTask({ assigneeId: nextAssigneeId })} members={members} compactStatus />
+                <TaskPlanningFields idPrefix="edit-project-task" dueDate={dueDate} onDueDateChange={(nextDueDate) => autoSaveTask({ dueDate: nextDueDate })} status={status} onStatusChange={(nextStatus) => autoSaveTask({ status: nextStatus })} assigneeId={assigneeId} onAssigneeChange={(nextAssigneeId) => autoSaveTask({ assigneeId: nextAssigneeId })} members={members} compactStatus completionBlocked={Number(editingTask.unresolved_dependency_count ?? editingTask.blocked_by_count ?? 0) > 0} />
                 <TaskAttributeFields idPrefix="edit-project-task" tags={tags} onTagsChange={(nextTags) => autoSaveTask({ tags: nextTags })} tagSuggestions={tagSuggestions} priority={priority} onPriorityChange={(nextPriority) => autoSaveTask({ priority: nextPriority })} showPriority={false} compactTags />
                 <dl className="mt-8 space-y-3 border-t border-slate-200 pt-5 text-xs text-slate-500">
                   <div className="flex items-center gap-2"><UserRound aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Created by</dt><dd>{getTaskUserName(editingTask.created_by)} · {formatDateTime(editingTask.created_at)}</dd></div>
                   <div className="flex items-center gap-2"><RefreshCw aria-hidden="true" className="size-4 flex-none" /><dt className="font-semibold text-slate-700">Updated by</dt><dd>{getTaskUserName(editingTask.updated_by)} · {formatDateTime(editingTask.updated_at)}</dd></div>
                 </dl>
+                <TaskStructure key={`structure-${editingTask.id}`} task={editingTask} members={members} onSummaryChange={(summary) => { setEditingTask((current) => current ? { ...current, ...summary } : current); setTaskRequest((current) => ({ ...current, tasks: current.tasks.map((item) => item.id === editingTask.id ? { ...item, ...summary } : item) })); }} />
                 <TaskCollaboration key={editingTask.id} taskId={editingTask.id} members={members} currentUserId={currentUserId} />
               </div>
             </div>
