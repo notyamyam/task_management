@@ -9,6 +9,7 @@ import ProjectDetails from "./components/ProjectDetails";
 import Account from "./components/Account";
 import ForgotPassword from "./components/ForgotPassword";
 import ChatAssistant from "./components/ChatAssistant";
+import { LoaderCircle } from "lucide-react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { ENDPOINTS, instance } from "./components/api";
@@ -17,6 +18,18 @@ const ProtectedRoute = () => {
   const token = localStorage.getItem("token");
   return token ? <DashboardLayout /> : <Navigate to="/" replace />;
 };
+
+const BackendLoadingScreen = () => (
+  <main className="grid min-h-svh place-items-center bg-[#f2f4ef] px-5 text-slate-950">
+    <div className="text-center" role="status" aria-live="polite">
+      <span className="mx-auto grid size-12 place-items-center rounded-xl bg-[#173b35] shadow-lg shadow-emerald-950/15">
+        <LoaderCircle aria-hidden="true" className="size-6 animate-spin text-[#dce993]" />
+      </span>
+      <h1 className="mt-5 text-xl font-semibold tracking-[-0.03em]">Starting Corner</h1>
+      <p className="mt-1.5 text-sm text-slate-600">Waiting for the workspace server...</p>
+    </div>
+  </main>
+);
 
 const DashboardLayout = () => {
   const [filter, setFilter] = useState("all");
@@ -184,6 +197,34 @@ const DashboardLayout = () => {
 };
 
 function App() {
+  const [isBackendReady, setIsBackendReady] = useState(false);
+
+  useEffect(() => {
+    let isCurrent = true;
+    let retryTimer;
+    const controller = new AbortController();
+
+    const checkBackend = async () => {
+      try {
+        await instance.get("/", { signal: controller.signal, timeout: 3000 });
+        if (isCurrent) setIsBackendReady(true);
+      } catch (error) {
+        if (isCurrent && error.code !== "ERR_CANCELED") {
+          retryTimer = window.setTimeout(checkBackend, 1500);
+        }
+      }
+    };
+
+    checkBackend();
+    return () => {
+      isCurrent = false;
+      controller.abort();
+      window.clearTimeout(retryTimer);
+    };
+  }, []);
+
+  if (!isBackendReady) return <BackendLoadingScreen />;
+
   return (
     <>
       <ToastContainer position="bottom-right" autoClose={3000} />
