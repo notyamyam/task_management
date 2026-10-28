@@ -45,6 +45,74 @@ def migrate_existing_schema():
                     "ALTER TABLE users ADD COLUMN password_reset_attempts INTEGER "
                     "NOT NULL DEFAULT 0"
                 ))
+            if "status" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN status VARCHAR(20)"
+                ))
+            if "must_change_password" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN must_change_password BOOLEAN"
+                ))
+            if "created_at" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN created_at TIMESTAMP WITH TIME ZONE"
+                ))
+            if "updated_at" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE"
+                ))
+            if "deleted_at" not in user_columns:
+                connection.execute(text(
+                    "ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE"
+                ))
+
+            connection.execute(text(
+                "UPDATE users SET status = 'active' WHERE status IS NULL"
+            ))
+            connection.execute(text(
+                "UPDATE users SET must_change_password = FALSE "
+                "WHERE must_change_password IS NULL"
+            ))
+            connection.execute(text(
+                "UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+            ))
+            connection.execute(text(
+                "UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN status SET DEFAULT 'active'"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN status SET NOT NULL"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN must_change_password SET DEFAULT FALSE"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN must_change_password SET NOT NULL"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN created_at SET NOT NULL"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN updated_at SET DEFAULT CURRENT_TIMESTAMP"
+            ))
+            connection.execute(text(
+                "ALTER TABLE users ALTER COLUMN updated_at SET NOT NULL"
+            ))
+
+            user_check_names = {
+                constraint.get("name")
+                for constraint in inspect(connection).get_check_constraints("users")
+            }
+            if "ck_users_status" not in user_check_names:
+                connection.execute(text(
+                    "ALTER TABLE users ADD CONSTRAINT ck_users_status CHECK "
+                    "(status IN ('active', 'disabled', 'deleted'))"
+                ))
             connection.execute(
                 text("ALTER TABLE users ALTER COLUMN password DROP NOT NULL")
             )
@@ -207,6 +275,15 @@ def migrate_existing_schema():
             connection.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_tasks_status ON tasks (status)"
             ))
+
+
+def initialize_database():
+    from .services.rbac import initialize_rbac_catalog
+
+    migrate_existing_schema()
+    Base.metadata.create_all(bind=engine)
+    with session() as db:
+        initialize_rbac_catalog(db)
 
 def get_db():
     db = session()

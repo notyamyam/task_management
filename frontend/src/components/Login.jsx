@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, LockKeyhole, Mail } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ENDPOINTS, instance } from "./api";
 import { GoogleLogin } from "@react-oauth/google";
 
@@ -12,6 +12,19 @@ const Login = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const finishLogin = (data) => {
+    localStorage.setItem("token", data.token);
+    if (data.must_change_password) {
+      navigate("/change-temporary-password", { replace: true });
+      return;
+    }
+
+    navigate(data.profile_complete ? "/dashboard" : "/account", {
+      state: { completeProfile: true },
+    });
+  };
 
   const handleOnSubmit = async (event) => {
     event.preventDefault();
@@ -28,10 +41,7 @@ const Login = () => {
         },
       );
 
-      localStorage.setItem("token", response.data.token);
-      navigate(response.data.profile_complete ? "/dashboard" : "/account", {
-        state: { completeProfile: true },
-      });
+       finishLogin(response.data);
     } catch (requestError) {
       const detail = requestError.response?.data?.detail;
       setError(
@@ -123,10 +133,7 @@ const Login = () => {
                   credential,
                 });
 
-                localStorage.setItem("token", response.data.token);
-                navigate(response.data.profile_complete ? "/dashboard" : "/account", {
-                  state: { completeProfile: true },
-                });
+                 finishLogin(response.data);
               } catch (error) {
                 setError(
                   error.response?.data?.detail ??
@@ -220,10 +227,10 @@ const Login = () => {
                   {error}
                 </p>
               ) : null}
-              {message ? (
-                <p className="text-sm font-medium text-emerald-800">
-                  {message}
-                </p>
+               {message || location.state?.message ? (
+                 <p className="text-sm font-medium text-emerald-800">
+                   {message || location.state.message}
+                 </p>
               ) : null}
             </div>
 

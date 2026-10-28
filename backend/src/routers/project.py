@@ -192,7 +192,11 @@ def get_available_project_users(
     )
     users = (
         db.query(User)
-        .filter(User.id != project.user_id, ~User.id.in_(member_ids))
+        .filter(
+            User.id != project.user_id,
+            User.status == "active",
+            ~User.id.in_(member_ids),
+        )
         .order_by(User.first_name.asc(), User.last_name.asc(), User.email.asc())
         .all()
     )
@@ -212,7 +216,12 @@ def add_project_member(
     if payload.user_id == project.user_id:
         raise HTTPException(status_code=409, detail="The project owner is already included")
 
-    user = db.query(User).filter(User.id == payload.user_id).first()
+    user = (
+        db.query(User)
+        .filter(User.id == payload.user_id, User.status == "active")
+        .with_for_update()
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

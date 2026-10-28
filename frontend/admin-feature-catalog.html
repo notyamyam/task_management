@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Corner administration feature catalog</title>
+  <style>
+    :root { color-scheme: light; --ink:#172522; --muted:#566660; --line:#d9e1dc; --paper:#fff; --wash:#f3f6f1; --green:#173b35; --lime:#dce993; --rose:#8f2d35; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--wash); color:var(--ink); font:15px/1.6 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1180px, calc(100% - 32px)); margin:0 auto; padding:48px 0 72px; }
+    header { border-bottom:2px solid var(--green); padding-bottom:28px; }
+    h1,h2,h3 { line-height:1.15; letter-spacing:-.025em; }
+    h1 { max-width:800px; margin:8px 0 14px; font-size:clamp(2rem,5vw,4rem); }
+    h2 { margin:0 0 16px; font-size:1.55rem; }
+    h3 { margin:24px 0 8px; font-size:1.05rem; }
+    p { max-width:78ch; }
+    .eyebrow { color:var(--green); font-size:.75rem; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+    .lede { color:var(--muted); font-size:1.1rem; max-width:70ch; }
+    nav { display:flex; flex-wrap:wrap; gap:8px; margin:20px 0 36px; }
+    nav a { border:1px solid var(--line); background:var(--paper); color:var(--green); padding:8px 12px; text-decoration:none; font-weight:700; }
+    nav a:hover, nav a:focus-visible { background:var(--green); color:#fff; outline:3px solid var(--lime); outline-offset:2px; }
+    section { margin-top:28px; padding:26px; background:var(--paper); border:1px solid var(--line); box-shadow:0 2px 8px #173b3510; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .card { border-left:4px solid var(--green); padding:14px 16px; background:#f8faf7; }
+    .card strong { display:block; }
+    ul,ol { padding-left:1.3rem; }
+    li + li { margin-top:6px; }
+    table { width:100%; border-collapse:collapse; font-size:.9rem; }
+    th,td { padding:10px 12px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:var(--green); color:#fff; }
+    code { background:#edf2ec; padding:2px 5px; color:#24463e; }
+    .status { display:inline-block; padding:2px 8px; border:1px solid #b8d9c6; background:#edf9f0; color:#176136; font-size:.78rem; font-weight:800; }
+    .warn { border-left-color:#b7791f; background:#fff9e9; }
+    .danger { border-left-color:var(--rose); background:#fff4f4; }
+    .checklist { list-style:none; padding-left:0; }
+    .checklist li::before { content:"□"; display:inline-block; width:1.5em; color:var(--green); font-weight:800; }
+    @media (max-width:720px) { main { width:min(100% - 20px, 1180px); padding-top:28px; } section { padding:18px; } .grid { grid-template-columns:1fr; } table { display:block; overflow-x:auto; white-space:normal; } th,td { min-width:150px; } }
+    @media print { body { background:#fff; } main { width:100%; padding:0; } nav { display:none; } section { box-shadow:none; break-inside:avoid; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Internal review artifact · Task 10</div>
+    <h1>Administration and internal catalog</h1>
+    <p class="lede">A permission-filtered control surface for global projects, tasks, notifications, reports, audit history, and safe system health. This document describes the frontend boundary and the backend contracts it consumes.</p>
+    <p><span class="status">Backend contract status: available</span> Routes are authenticated through the existing JWT Axios interceptor. This file is static, has no API calls, contains no secrets, and is intentionally outside <code>frontend/public</code>.</p>
+  </header>
+
+  <nav aria-label="Catalog sections">
+    <a href="#navigation">Navigation</a><a href="#routes">Routes</a><a href="#permissions">Permissions</a><a href="#operations">Operations</a><a href="#flows">Lifecycle flows</a><a href="#states">States</a><a href="#accessibility">Accessibility</a><a href="#invariants">Invariants</a><a href="#review">Review checklist</a>
+  </nav>
+
+  <section id="navigation"><h2>Chosen navigation</h2><div class="grid">
+    <div class="card"><strong>Overview</strong><span>Permission-filtered summary, warnings, recent activity, and safe integration flags.</span></div>
+    <div class="card"><strong>Users · Roles</strong><span>Existing Task 9 screens remain the account and RBAC administration entry points.</span></div>
+    <div class="card"><strong>Projects · Tasks</strong><span>Global records with detail panels, drawers for edits, nested resources, and explicit destructive confirmation.</span></div>
+    <div class="card"><strong>Notifications · Reports</strong><span>Moderation, preference delivery controls, safe CSV downloads, and permission-gated AI reports.</span></div>
+    <div class="card"><strong>Audit · System</strong><span>Read-only audit explorer and boolean-only integration health.</span></div>
+  </div><p>Navigation items are hidden when their exact read permission is absent. Reports is shown only when <code>reports.export</code> or <code>reports.generate</code> is present. Direct URLs still render a permission-specific forbidden state.</p></section>
+
+  <section id="routes"><h2>Route map</h2><table><thead><tr><th>Route</th><th>Screen</th><th>Visibility</th><th>Backend surface</th></tr></thead><tbody>
+    <tr><td><code>/admin</code></td><td>Overview</td><td>Any admin permission</td><td><code>/admin/summary</code></td></tr>
+    <tr><td><code>/admin/projects</code></td><td>Projects</td><td><code>projects.read</code></td><td><code>/admin/projects</code> and memberships</td></tr>
+    <tr><td><code>/admin/tasks</code></td><td>Tasks</td><td><code>tasks.read</code></td><td><code>/admin/tasks</code> and nested resources</td></tr>
+    <tr><td><code>/admin/notifications</code></td><td>Notifications</td><td><code>notifications.read</code></td><td><code>/admin/notifications</code>, user preferences</td></tr>
+    <tr><td><code>/admin/reports</code></td><td>Reports</td><td>Either report permission</td><td><code>/admin/reports/tasks.csv</code>, <code>/admin/reports/projects/{project_id}/task-report.csv</code></td></tr>
+    <tr><td><code>/admin/audit</code></td><td>Audit</td><td><code>audit_logs.read</code></td><td><code>/admin/audit-logs</code></td></tr>
+    <tr><td><code>/admin/system</code></td><td>System</td><td><code>system_integrations.read</code></td><td><code>/admin/integrations/health</code></td></tr>
+  </tbody></table></section>
+
+  <section id="permissions"><h2>Full permission matrix</h2><p>These are exact backend keys. The UI hides unavailable operations; the backend remains the enforcement boundary.</p><table><thead><tr><th>Module</th><th>Read</th><th>Create / update</th><th>Delete / special</th></tr></thead><tbody>
+    <tr><th>users</th><td><code>users.read</code></td><td><code>users.create</code>, <code>users.update</code></td><td><code>users.delete</code>, <code>users.assign_roles</code>, <code>users.revoke_sessions</code></td></tr>
+    <tr><th>roles</th><td><code>roles.read</code></td><td><code>roles.create</code>, <code>roles.update</code></td><td><code>roles.delete</code>, <code>roles.set_permissions</code></td></tr>
+    <tr><th>projects</th><td><code>projects.read</code></td><td><code>projects.create</code>, <code>projects.update</code></td><td><code>projects.delete</code>, <code>projects.transfer</code></td></tr>
+    <tr><th>project members</th><td><code>project_members.read</code></td><td><code>project_members.create</code></td><td><code>project_members.delete</code></td></tr>
+    <tr><th>tasks</th><td><code>tasks.read</code></td><td><code>tasks.create</code>, <code>tasks.update</code></td><td><code>tasks.delete</code></td></tr>
+    <tr><th>subtasks</th><td><code>subtasks.read</code></td><td><code>subtasks.create</code>, <code>subtasks.update</code></td><td><code>subtasks.delete</code></td></tr>
+    <tr><th>dependencies</th><td><code>task_dependencies.read</code></td><td><code>task_dependencies.create</code></td><td><code>task_dependencies.delete</code></td></tr>
+    <tr><th>comments / activity</th><td><code>task_comments.read</code>, <code>task_activity.read</code></td><td>None for comments</td><td><code>task_comments.delete</code>; activity is read-only</td></tr>
+    <tr><th>notifications</th><td><code>notifications.read</code></td><td>None for content or read state</td><td><code>notifications.delete</code></td></tr>
+    <tr><th>preferences</th><td><code>notification_preferences.read</code></td><td><code>notification_preferences.update</code></td><td>Per-user delivery preferences only</td></tr>
+    <tr><th>reports</th><td>Screen requires either export or generate</td><td><code>reports.export</code>, <code>reports.generate</code></td><td>Audited downloads</td></tr>
+    <tr><th>audit / system</th><td><code>audit_logs.read</code>, <code>system_integrations.read</code></td><td>None</td><td>Read-only; health returns two booleans</td></tr>
+  </tbody></table></section>
+
+  <section id="operations"><h2>Operations and constraints</h2><div class="grid">
+    <div class="card"><h3>Projects</h3><ul><li>Filterable, paginated global list and detail.</li><li>Create and edit in a drawer; create requires an active owner.</li><li>Transfer owner explicitly: old owner becomes a member, new owner is removed from memberships.</li><li>Add/remove memberships only for eligible active users; owner and duplicate selections are excluded.</li><li>Delete requires a confirmation. A <code>cascade_confirmation_required</code> conflict reveals task and member counts and requires a second confirmation.</li></ul></div>
+    <div class="card"><h3>Tasks</h3><ul><li>Filter by project, search, status, priority, and due state; paginate through URL query state.</li><li>Create/edit in a drawer; existing project, active-assignee, dependency, completion, and cycle validation remains authoritative.</li><li>Expose permitted subtask CRUD, dependency add/remove, comment inspection/deletion, and read-only activity.</li><li>Every destructive task or nested operation opens the shared confirmation dialog.</li></ul></div>
+    <div class="card"><h3>Notifications and preferences</h3><ul><li>Filter global notifications by user, type, and unread state.</li><li>Delete only after confirmation; no mark-read, resend, or content rewrite controls.</li><li>Load a user preference record and update only delivery booleans and reminder days when permitted.</li></ul></div>
+    <div class="card"><h3>Reports</h3><ul><li>Workspace task CSV and project CSV use safe browser download handling.</li><li>AI project report is a backend-generated CSV with server report limits.</li><li>Filename is sanitized client-side; errors do not create a download.</li></ul></div>
+    <div class="card"><h3>Audit</h3><ul><li>Filter by action, resource, actor, target, outcome, ID, and time range.</li><li>Rows and a detail panel are read-only.</li><li>Deleted actors are rendered as the neutral backend label “Deleted user”.</li></ul></div>
+    <div class="card"><h3>System</h3><ul><li>Shows only <code>email_configured</code> and <code>ai_configured</code>.</li><li>No credential inputs, secret values, provider probes, or configuration mutation.</li></ul></div>
+  </div></section>
+
+  <section id="flows"><h2>Lifecycle flows</h2><ol><li><strong>Authenticate:</strong> existing token interceptor attaches JWT; admin capability lookup gates the shell.</li><li><strong>Discover:</strong> navigation and action controls derive from exact effective permissions.</li><li><strong>Load:</strong> each module shows a status spinner, preserves URL filters where applicable, and guards stale responses.</li><li><strong>Edit:</strong> entity edits use a right-side drawer with focus trap, Escape close, and focus return.</li><li><strong>Mutate:</strong> request errors preserve form or confirmation context; stable conflict codes are shown with actionable impact.</li><li><strong>Confirm destruction:</strong> destructive actions require an accessible confirmation before network mutation. Project cascade requires a second impact confirmation.</li><li><strong>Recover:</strong> success status is visible in-page; retry controls reload failed reads; empty and no-match states explain next steps.</li><li><strong>Download:</strong> report response becomes a sanitized local browser download only after a successful response.</li></ol><div class="card warn"><strong>Conflict behavior</strong><span>Stable codes such as <code>cascade_confirmation_required</code>, <code>project_name_in_use</code>, <code>active_owner_required</code>, <code>active_member_required</code>, and backend validation messages are never replaced by a generic success toast.</span></div></section>
+
+  <section id="states"><h2>State coverage</h2><div class="grid"><div class="card"><strong>Loading</strong><span>Inline status regions with spinner and human-readable operation label.</span></div><div class="card"><strong>Error</strong><span>Visible alert copy, retry where a read can be retried, and preserved action context for mutations.</span></div><div class="card"><strong>Empty</strong><span>Explains a genuinely empty module and the next safe action.</span></div><div class="card"><strong>No match</strong><span>Distinguishes filtered no-match from an empty workspace.</span></div><div class="card"><strong>Success</strong><span>In-page status messages remain available to assistive technology.</span></div><div class="card"><strong>Disabled / unavailable</strong><span>Controls disable during requests and when required catalogs or exact permissions are unavailable.</span></div></div></section>
+
+  <section id="accessibility"><h2>Accessibility and responsive expectations</h2><ul><li>Semantic landmarks, headings, labels, lists, tables, forms, buttons, and dialogs are used for their meaning.</li><li>Every icon-only control has an accessible label; important async feedback uses <code>role="status"</code> or <code>role="alert"</code>.</li><li>Every enabled button has a pointer cursor and visible <code>:focus-visible</code> treatment; disabled controls communicate why they cannot run.</li><li>Drawers and confirmation dialogs trap focus, close on Escape when not busy, and return focus to the trigger.</li><li>Desktop layouts use split list/detail compositions; narrow layouts stack content without removing required actions. Touch targets are at least approximately 44px high.</li><li>Long titles, descriptions, comments, metadata, IDs, and filenames wrap or scroll without page-wide overflow.</li><li>Color is paired with text labels; reduced motion is respected by the existing utility-based styling.</li></ul></section>
+
+  <section id="invariants"><h2>Security and data invariants</h2><div class="grid"><div class="card danger"><strong>Backend is authoritative</strong><span>Frontend permission hiding is usability and information minimization, not authorization. Every API request is protected by backend permission dependencies.</span></div><div class="card"><strong>No secret exposure</strong><span>Health screens render booleans only. Catalog has no API calls or credentials. Report content and filenames are server-controlled and sanitized.</span></div><div class="card"><strong>Data integrity</strong><span>Admin access does not bypass active-user, same-project, dependency-cycle, completion, or project-name invariants.</span></div><div class="card"><strong>Moderation boundary</strong><span>Comments can be inspected/deleted if permitted; authorship is never rewritten. Activity and audit are read-only.</span></div><div class="card"><strong>Deletion impact</strong><span>No bulk destructive controls. Project and task deletion explain nested impact before confirmation; audit metadata contains counts, not content.</span></div><div class="card"><strong>Deleted identities</strong><span>Deleted audit actors render neutrally and the interface does not reconstruct deleted identity details.</span></div></div></section>
+
+  <section><h2>Migration notes</h2><ul><li>Frontend consumes the Task 5–7 admin routes and does not change backend schemas, permissions, or conflict codes.</li><li>Existing deployments must include the Task 5–7 backend routes before these modules are usable; older servers will show module errors rather than silently falling back to ordinary workspace APIs.</li><li>The catalog is an internal review artifact at <code>frontend/admin-feature-catalog.html</code>; Vite does not copy it into <code>dist</code>.</li><li>No npm dependency or database migration is required by this frontend task.</li></ul><h2>Non-goals</h2><ul><li>No bulk destructive actions.</li><li>No ordinary workspace membership or project workflow redesign.</li><li>No notification mark-read, content editing, resend, or moderation rewrite.</li><li>No audit mutation, system credential editing, provider probing, or secret display.</li><li>No new auth model, state library, API client, or component library.</li></ul></section>
+
+  <section id="review"><h2>Reviewer checklist</h2><ul class="checklist"><li>Confirm exact permission hiding for navigation and direct denied URLs.</li><li>Verify project creation and owner transfer cannot choose inactive users.</li><li>Verify membership add excludes owner, duplicates, disabled users, and deleted users.</li><li>Verify project cascade conflict displays backend counts and requires explicit second confirmation.</li><li>Verify task nested permissions independently hide subtask, dependency, comment, and activity controls.</li><li>Verify every delete path opens confirmation before the request.</li><li>Verify no comment update or activity mutation exists in the UI or API builder.</li><li>Verify notifications do not mark read or rewrite content.</li><li>Verify CSV downloads succeed safely and failed blobs do not create files.</li><li>Verify audit is read-only and deleted actors are neutral.</li><li>Verify system only renders two booleans and contains no credential fields.</li><li>Run node test, lint, build, and diff check; verify the catalog is absent from <code>dist</code>.</li><li>Check authenticated routes at 1280px and 390px with keyboard focus and a screen reader pass.</li></ul></section>
+</main>
+</body>
+</html>

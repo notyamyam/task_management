@@ -106,7 +106,13 @@ def serialize_tags(stored_tags):
     return tags
 
 
-def get_project_assignee(project, assignee_user_id, db):
+def get_project_assignee(project, assignee_user_id, db, *, require_active=True):
+    criteria = [
+        User.id == assignee_user_id,
+        or_(User.id == project.user_id, ProjectMember.user_id.is_not(None)),
+    ]
+    if require_active:
+        criteria.append(User.status == "active")
     assignee = (
         db.query(User)
         .outerjoin(
@@ -116,10 +122,8 @@ def get_project_assignee(project, assignee_user_id, db):
                 ProjectMember.user_id == User.id,
             ),
         )
-        .filter(
-            User.id == assignee_user_id,
-            or_(User.id == project.user_id, ProjectMember.user_id.is_not(None)),
-        )
+        .filter(*criteria)
+        .with_for_update(of=User)
         .first()
     )
     if not assignee:
@@ -661,7 +665,10 @@ def update_subtask(
     if not subtask:
         raise HTTPException(status_code=404, detail="Subtask not found")
     old_assignee_user_id = subtask.assignee_user_id
-    if "assignee_user_id" in payload.model_fields_set:
+    if (
+        "assignee_user_id" in payload.model_fields_set
+        and payload.assignee_user_id != old_assignee_user_id
+    ):
         validate_subtask_assignee(task, payload.assignee_user_id, current_user, db)
     for field in payload.model_fields_set:
         setattr(subtask, field, getattr(payload, field))
@@ -1089,7 +1096,16 @@ def update_task(
     if assignee_user_id is not None:
         if project is None:
             raise HTTPException(status_code=422, detail="Assigned tasks require a project")
-        new_assignee = get_project_assignee(project, assignee_user_id, db)
+        assignment_changed = (
+            task.project_id != existing_task.project_id
+            or assignee_user_id != old_assignee_user_id
+        )
+        new_assignee = get_project_assignee(
+            project,
+            assignee_user_id,
+            db,
+            require_active=assignment_changed,
+        )
 
     completed_changed = task.completed != existing_task.completed
     task_data = task.model_dump(

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from .routers import ai, notification, project, task, user
-from .database import Base, engine, migrate_existing_schema
+from .routers import admin, ai, notification, project, task, user
+from .database import initialize_database
 from fastapi.middleware.cors import CORSMiddleware
 from .models import (
     Notification,
@@ -32,8 +32,7 @@ app.add_middleware(
         "X-Total-Pages",
     ],
 )
-migrate_existing_schema()
-Base.metadata.create_all(bind=engine)
+initialize_database()
 
 @app.get("/")
 def root():
@@ -44,3 +43,4 @@ app.include_router(user.router)
 app.include_router(project.router)
 app.include_router(ai.router)
 app.include_router(notification.router)
+app.include_router(admin.router)

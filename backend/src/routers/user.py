@@ -7,6 +7,7 @@ from ..schemas import (
     GoogleLogin,
     PasswordResetConfirm,
     PasswordResetRequest,
+    TemporaryPasswordChange,
     UserPasswordUpdate,
     UserProfileUpdate,
     UsersCreate,
@@ -14,6 +15,7 @@ from ..schemas import (
 from ..database import get_db
 from ..models import User
 from ..security import auth
+from ..security.authorization import require_permission
 from ..services.email import is_smtp_configured, send_password_reset_otp
 from fastapi.security import OAuth2PasswordRequestForm
 from google.auth.transport import requests as google_requests
@@ -28,6 +30,11 @@ router = APIRouter(prefix="/users", tags=["Users"])
 PASSWORD_RESET_RESPONSE = {
     "message": "If an account exists for that email, a reset code has been sent."
 }
+DUMMY_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$"
+    "xRhDiLG29p4TIgQg5HzvvQ$"
+    "xra4rSF3WcCnSE70tUgdHoyqKarEGgwDCY5svDrQHYc"
+)
 
 
 def normalize_google_name(value):
@@ -57,6 +64,16 @@ def clear_password_reset(user: User, preserve_requested_at=False):
     user.password_reset_attempts = 0
 
 
+def authenticate_password_user(db, email: str, password: str) -> User:
+    user = db.query(User).filter(User.email == email).first()
+    password_hash = user.password if user and user.password else DUMMY_PASSWORD_HASH
+    password_matches = auth.verify_password(password, password_hash)
+    if not user or user.password is None or not password_matches:
+        raise HTTPException(status_code=401, detail="Invalid Credentials")
+    auth.ensure_login_allowed(user)
+    return user
+
+
 def deliver_password_reset_otp(email: str, otp: str):
     try:
         send_password_reset_otp(email, otp)
@@ -65,8 +82,10 @@ def deliver_password_reset_otp(email: str, otp: str):
 
 
 @router.get("/me")
-def get_current_user(current_user = Depends(auth.get_current_user)):
-    return serialize_profile(current_user)
+def get_current_user(current_user = Depends(auth.get_authenticated_user)):
+    profile = serialize_profile(current_user)
+    profile["must_change_password"] = current_user.must_change_password
+    return profile
 
 
 @router.put("/me")
@@ -80,6 +99,52 @@ def update_profile(
     db.commit()
     db.refresh(current_user)
     return serialize_profile(current_user)
+
+
+@router.put("/me/temporary-password")
+def replace_temporary_password(
+    passwords: TemporaryPasswordChange,
+    db = Depends(get_db),
+    current_user = Depends(auth.get_authenticated_user),
+):
+    if not current_user.must_change_password:
+        raise HTTPException(
+            status_code=400,
+            detail="Temporary password change is not required.",
+        )
+
+    password_hash = auth.hash_password(passwords.new_password)
+    updated = (
+        db.query(User)
+        .filter(
+            User.id == current_user.id,
+            User.status == "active",
+            User.must_change_password.is_(True),
+            User.auth_version == current_user.auth_version,
+        )
+        .update(
+            {
+                User.password: password_hash,
+                User.must_change_password: False,
+                User.auth_version: User.auth_version + 1,
+                User.password_reset_otp_hash: None,
+                User.password_reset_otp_expires_at: None,
+                User.password_reset_requested_at: None,
+                User.password_reset_attempts: 0,
+            },
+            synchronize_session=False,
+        )
+    )
+    if updated != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Temporary password change is not required.",
+        )
+    db.commit()
+    return {
+        "message": "Temporary password changed successfully. Please sign in again."
+    }
 
 
 @router.put("/me/password")
@@ -102,7 +167,7 @@ def update_password(
     return {"message": "Password updated successfully"}
 
 @router.get("/")
-def get_users(db = Depends(get_db), current_user = Depends(auth.get_current_user)):
+def get_users(db = Depends(get_db), current_user = Depends(require_permission("users.read"))):
     users = db.query(User).all()
     return [serialize_profile(user) for user in users]
 
@@ -126,6 +191,10 @@ def request_password_reset(
         .first()
     )
     if not user:
+        return PASSWORD_RESET_RESPONSE
+    try:
+        auth.ensure_login_allowed(user)
+    except HTTPException:
         return PASSWORD_RESET_RESPONSE
 
     now = datetime.now(timezone.utc)
@@ -159,6 +228,10 @@ def confirm_password_reset(payload: PasswordResetConfirm, db = Depends(get_db)):
 
     if not user or not user.password_reset_otp_hash:
         raise invalid_code
+    try:
+        auth.ensure_login_allowed(user)
+    except HTTPException:
+        raise invalid_code from None
 
     now = datetime.now(timezone.utc)
     if (
@@ -210,11 +283,7 @@ def create_user(user: UsersCreate, db = Depends(get_db)):
 
 @router.post("/login")
 def login_user(user: UsersCreate, db = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if not existing_user or existing_user.password is None:
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
-    if not auth.verify_password(user.password, existing_user.password):
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
+    existing_user = authenticate_password_user(db, user.email, user.password)
     access_token = auth.create_access_token(
         data={"sub": existing_user.email, "auth_version": existing_user.auth_version}
     )
@@ -222,16 +291,13 @@ def login_user(user: UsersCreate, db = Depends(get_db)):
         "token": access_token,
         "token_type": "bearer",
         "profile_complete": bool(existing_user.first_name and existing_user.last_name),
+        "must_change_password": existing_user.must_change_password,
     }
 
 @router.post("/token")
 def get_token(form_data:OAuth2PasswordRequestForm = Depends(), db = Depends(get_db)):
     email = form_data.username.strip().lower()
-    user_exist = db.query(User).filter(User.email == email).first()
-    if not user_exist or user_exist.password is None:
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
-    if not auth.verify_password(form_data.password, user_exist.password):
-        raise HTTPException(status_code=401, detail="Invalid Credentials")
+    user_exist = authenticate_password_user(db, email, form_data.password)
     access_token = auth.create_access_token(
         data={"sub": user_exist.email, "auth_version": user_exist.auth_version}
     )
@@ -239,6 +305,7 @@ def get_token(form_data:OAuth2PasswordRequestForm = Depends(), db = Depends(get_
         "access_token": access_token,
         "token_type": "bearer",
         "profile_complete": bool(user_exist.first_name and user_exist.last_name),
+        "must_change_password": user_exist.must_change_password,
     }
 
 @router.post("/google")
@@ -268,11 +335,14 @@ def google_login(payload: GoogleLogin, db=Depends(get_db)):
     email = google_email.strip().lower()
 
     user = db.query(User).filter(User.google_sub == google_sub).first()
+    if user:
+        auth.ensure_login_allowed(user)
 
     if not user:
         user = db.query(User).filter(User.email == email).first()
 
         if user:
+            auth.ensure_login_allowed(user)
             google_is_authoritative = email.endswith("@gmail.com") or bool(claims.get("hd"))
             if not google_is_authoritative:
                 raise HTTPException(
@@ -300,4 +370,5 @@ def google_login(payload: GoogleLogin, db=Depends(get_db)):
         "token": access_token,
         "token_type": "bearer",
         "profile_complete": bool(user.first_name and user.last_name),
+        "must_change_password": user.must_change_password,
     }

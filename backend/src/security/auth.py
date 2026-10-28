@@ -14,6 +14,20 @@ pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/token")
 
+def ensure_login_allowed(user: User) -> None:
+    if user.status != "active":
+        raise HTTPException(status_code=401, detail="Invalid Credentials")
+
+def require_password_changed(user: User) -> None:
+    if user.must_change_password:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "password_change_required",
+                "message": "Password change required",
+            },
+        )
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -51,11 +65,17 @@ def verify_token(token: str):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-def get_current_user(token = Depends(oauth2_scheme), db = Depends(get_db)):
+def get_authenticated_user(token = Depends(oauth2_scheme), db = Depends(get_db)):
     email, token_auth_version = verify_token(token)
     user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if token_auth_version != user.auth_version:
+    if not user or token_auth_version != user.auth_version:
         raise HTTPException(status_code=401, detail="Invalid token")
+    try:
+        ensure_login_allowed(user)
+    except HTTPException as error:
+        raise HTTPException(status_code=401, detail="Invalid token") from error
     return user
+
+def get_current_user(current_user = Depends(get_authenticated_user)):
+    require_password_changed(current_user)
+    return current_user

@@ -7,6 +7,7 @@ export const ENDPOINTS = {
   GET_PROFILE: () => "/users/me",
   UPDATE_PROFILE: () => "/users/me",
   UPDATE_PASSWORD: () => "/users/me/password",
+  UPDATE_TEMPORARY_PASSWORD: () => "/users/me/temporary-password",
   REQUEST_PASSWORD_RESET: () => "/users/password-reset/request",
   CONFIRM_PASSWORD_RESET: () => "/users/password-reset/confirm",
   CREATE_TASK: () => "/tasks/create-task",
@@ -45,6 +46,74 @@ export const ENDPOINTS = {
   AI_TASK_EXPORT: (projectId) => projectId ? `/ai/task-export.csv?project_id=${projectId}` : "/ai/task-export.csv",
   AI_PROJECT_TASK_REPORT: (id) => `/ai/projects/${id}/task-report.csv`,
   GOOGLE_LOGIN: () => "/users/google",
+  GET_ADMIN_ME: () => "/admin/me",
+  GET_ADMIN_SUMMARY: () => "/admin/summary",
+  GET_ADMIN_USERS: (params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/users${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  CREATE_ADMIN_USER: () => "/admin/users",
+  GET_ADMIN_USER: (id) => `/admin/users/${id}`,
+  UPDATE_ADMIN_USER: (id) => `/admin/users/${id}`,
+  REPLACE_ADMIN_USER_ROLES: (id) => `/admin/users/${id}/roles`,
+  REVOKE_ADMIN_USER_SESSIONS: (id) => `/admin/users/${id}/revoke-sessions`,
+  DELETE_ADMIN_USER: (id) => `/admin/users/${id}`,
+  GET_ADMIN_ROLES: () => "/admin/roles",
+  CREATE_ADMIN_ROLE: () => "/admin/roles",
+  GET_ADMIN_ROLE: (id) => `/admin/roles/${id}`,
+  UPDATE_ADMIN_ROLE: (id) => `/admin/roles/${id}`,
+  DELETE_ADMIN_ROLE: (id) => `/admin/roles/${id}`,
+  GET_ADMIN_PERMISSIONS: () => "/admin/permissions",
+  REPLACE_ADMIN_ROLE_PERMISSIONS: (id) => `/admin/roles/${id}/permissions`,
+  GET_ADMIN_PROJECTS: (params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/projects${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  CREATE_ADMIN_PROJECT: () => "/admin/projects",
+  GET_ADMIN_PROJECT: (id) => `/admin/projects/${id}`,
+  UPDATE_ADMIN_PROJECT: (id) => `/admin/projects/${id}`,
+  TRANSFER_ADMIN_PROJECT: (id) => `/admin/projects/${id}/transfer`,
+  DELETE_ADMIN_PROJECT: (id, confirmCascade = false) => `/admin/projects/${id}${confirmCascade ? "?confirm_cascade=true" : ""}`,
+  GET_ADMIN_PROJECT_MEMBERS: (id, params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/projects/${id}/members${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  ADD_ADMIN_PROJECT_MEMBER: (id) => `/admin/projects/${id}/members`,
+  DELETE_ADMIN_PROJECT_MEMBER: (projectId, userId) => `/admin/projects/${projectId}/members/${userId}`,
+  GET_ADMIN_TASKS: (params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/tasks${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  CREATE_ADMIN_TASK: () => "/admin/tasks",
+  GET_ADMIN_TASK: (id) => `/admin/tasks/${id}`,
+  UPDATE_ADMIN_TASK: (id) => `/admin/tasks/${id}`,
+  DELETE_ADMIN_TASK: (id) => `/admin/tasks/${id}`,
+  GET_ADMIN_SUBTASKS: (id) => `/admin/tasks/${id}/subtasks`,
+  CREATE_ADMIN_SUBTASK: (id) => `/admin/tasks/${id}/subtasks`,
+  UPDATE_ADMIN_SUBTASK: (taskId, subtaskId) => `/admin/tasks/${taskId}/subtasks/${subtaskId}`,
+  DELETE_ADMIN_SUBTASK: (taskId, subtaskId) => `/admin/tasks/${taskId}/subtasks/${subtaskId}`,
+  GET_ADMIN_DEPENDENCIES: (id) => `/admin/tasks/${id}/dependencies`,
+  CREATE_ADMIN_DEPENDENCY: (id) => `/admin/tasks/${id}/dependencies`,
+  DELETE_ADMIN_DEPENDENCY: (taskId, dependencyId) => `/admin/tasks/${taskId}/dependencies/${dependencyId}`,
+  GET_ADMIN_COMMENTS: (id) => `/admin/tasks/${id}/comments`,
+  DELETE_ADMIN_COMMENT: (taskId, commentId) => `/admin/tasks/${taskId}/comments/${commentId}`,
+  GET_ADMIN_ACTIVITY: (id) => `/admin/tasks/${id}/activity`,
+  GET_ADMIN_NOTIFICATIONS: (params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/notifications${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  GET_ADMIN_NOTIFICATION: (id) => `/admin/notifications/${id}`,
+  DELETE_ADMIN_NOTIFICATION: (id) => `/admin/notifications/${id}`,
+  GET_ADMIN_NOTIFICATION_PREFERENCES: (userId) => `/admin/users/${userId}/notification-preferences`,
+  UPDATE_ADMIN_NOTIFICATION_PREFERENCES: (userId) => `/admin/users/${userId}/notification-preferences`,
+  EXPORT_ADMIN_TASKS: (projectId) => projectId ? `/admin/reports/tasks.csv?project_id=${encodeURIComponent(projectId)}` : "/admin/reports/tasks.csv",
+  GENERATE_ADMIN_PROJECT_REPORT: (projectId) => `/admin/reports/projects/${projectId}/task-report.csv`,
+  GET_ADMIN_AUDIT_LOGS: (params = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && value !== null));
+    return `/admin/audit-logs${query.toString() ? `?${query.toString()}` : ""}`;
+  },
+  GET_ADMIN_AUDIT_LOG: (id) => `/admin/audit-logs/${id}`,
+  GET_ADMIN_INTEGRATION_HEALTH: () => "/admin/integrations/health",
 };
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
