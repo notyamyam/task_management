@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import Navbar from "./components/Navbar";
 import TopNavbar from "./components/TopNavbar";
 import Dashboard from "./components/Dashboard";
@@ -9,10 +9,25 @@ import ProjectDetails from "./components/ProjectDetails";
 import Account from "./components/Account";
 import ForgotPassword from "./components/ForgotPassword";
 import ChatAssistant from "./components/ChatAssistant";
+import TemporaryPasswordChange from "./components/TemporaryPasswordChange";
 import { LoaderCircle } from "lucide-react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { ENDPOINTS, instance } from "./components/api";
+
+const AdminRoute = lazy(() => import("./components/admin/AdminRoute"));
+const AdminLayout = lazy(() => import("./components/admin/AdminLayout"));
+const AdminOverview = lazy(() => import("./components/admin/AdminOverview"));
+const AdminUsers = lazy(() => import("./components/admin/AdminUsers"));
+const AdminUserDetails = lazy(() => import("./components/admin/AdminUserDetails"));
+const AdminRoles = lazy(() => import("./components/admin/AdminRoles"));
+const AdminRoleDetails = lazy(() => import("./components/admin/AdminRoleDetails"));
+const AdminProjects = lazy(() => import("./components/admin/AdminProjects"));
+const AdminTasks = lazy(() => import("./components/admin/AdminTasks"));
+const AdminNotifications = lazy(() => import("./components/admin/AdminNotifications"));
+const AdminReports = lazy(() => import("./components/admin/AdminReports"));
+const AdminAudit = lazy(() => import("./components/admin/AdminAudit"));
+const AdminSystem = lazy(() => import("./components/admin/AdminSystem"));
 
 const ProtectedRoute = () => {
   const token = localStorage.getItem("token");
@@ -31,11 +46,21 @@ const BackendLoadingScreen = () => (
   </main>
 );
 
+const AdminRouteLoading = () => (
+  <main className="grid min-h-[calc(100svh-3rem)] place-items-center bg-[#f4f6f2] px-5 text-sm text-slate-600" role="status">
+    <span className="flex items-center gap-2"><LoaderCircle aria-hidden="true" className="size-5 animate-spin text-emerald-800" />Loading administration...</span>
+  </main>
+);
+
 const DashboardLayout = () => {
   const [filter, setFilter] = useState("all");
   const [profile, setProfile] = useState(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState("");
+  const [adminPermissions, setAdminPermissions] = useState([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isAdminLoading, setIsAdminLoading] = useState(true);
+  const [adminError, setAdminError] = useState("");
   const [projects, setProjects] = useState([]);
   const [isProjectsLoading, setIsProjectsLoading] = useState(true);
   const [projectsError, setProjectsError] = useState("");
@@ -45,6 +70,7 @@ const DashboardLayout = () => {
   const projectChatMatch = location.pathname.match(/^\/projects\/(\d+)$/);
   const chatProjectId = projectChatMatch?.[1] ?? null;
   const showChatAssistant = location.pathname === "/dashboard" || Boolean(chatProjectId);
+  const isAdminRoute = location.pathname.startsWith("/admin");
 
   const loadProfile = async () => {
     setIsProfileLoading(true);
@@ -79,6 +105,50 @@ const DashboardLayout = () => {
     };
   }, []);
 
+  const loadAdminCapabilities = async () => {
+    setIsAdminLoading(true);
+    setAdminError("");
+    try {
+      const response = await instance.get(ENDPOINTS.GET_ADMIN_ME());
+      setAdminPermissions(response.data.permissions ?? []);
+      setIsSuperAdmin(Boolean(response.data.is_super_admin));
+    } catch (error) {
+      setAdminPermissions([]);
+      setIsSuperAdmin(false);
+      const detail = error.response?.data?.detail;
+      setAdminError(typeof detail === "string" ? detail : "We couldn't verify administration access.");
+    } finally {
+      setIsAdminLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    instance
+      .get(ENDPOINTS.GET_ADMIN_ME())
+      .then((response) => {
+        if (isCurrent) {
+          setAdminPermissions(response.data.permissions ?? []);
+          setIsSuperAdmin(Boolean(response.data.is_super_admin));
+        }
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setAdminPermissions([]);
+          setIsSuperAdmin(false);
+          setAdminError(typeof error.response?.data?.detail === "string" ? error.response.data.detail : "We couldn't verify administration access.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsAdminLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
+
   const loadProjects = async () => {
     setIsProjectsLoading(true);
     setProjectsError("");
@@ -93,7 +163,9 @@ const DashboardLayout = () => {
   };
 
   useEffect(() => {
-    if (!isProfileComplete) return undefined;
+    if (!isProfileComplete || profile?.must_change_password || isAdminRoute) {
+      return undefined;
+    }
 
     let isCurrent = true;
     instance
@@ -113,7 +185,7 @@ const DashboardLayout = () => {
     return () => {
       isCurrent = false;
     };
-  }, [isProfileComplete]);
+  }, [isAdminRoute, isProfileComplete, profile?.must_change_password]);
 
   const addProjectToList = (project) => {
     setProjects((current) => [...current, project].sort((a, b) => a.name.localeCompare(b.name)));
@@ -136,6 +208,9 @@ const DashboardLayout = () => {
           filter={filter}
           onFilterChange={setFilter}
           projects={projects}
+          adminPermissions={adminPermissions}
+          isAdminLoading={isAdminLoading}
+          adminError={adminError}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <TopNavbar profile={profile} />
@@ -151,6 +226,16 @@ const DashboardLayout = () => {
     return <Navigate to="/account" replace state={{ completeProfile: true }} />;
   }
 
+  if (profile?.must_change_password) {
+    return location.pathname === "/change-temporary-password"
+      ? <TemporaryPasswordChange />
+      : <Navigate to="/change-temporary-password" replace />;
+  }
+
+  if (location.pathname === "/change-temporary-password") {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   if (!isProfileLoading && profile && !profile.profile_complete && location.pathname !== "/account") {
     return <Navigate to="/account" replace state={{ completeProfile: true }} />;
   }
@@ -161,6 +246,9 @@ const DashboardLayout = () => {
         filter={filter}
         onFilterChange={setFilter}
         projects={projects}
+        adminPermissions={adminPermissions}
+        isAdminLoading={isAdminLoading}
+        adminError={adminError}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopNavbar profile={profile} />
@@ -182,6 +270,11 @@ const DashboardLayout = () => {
           onProjectCreated: addProjectToList,
           onProjectUpdated: updateProjectInList,
           onProjectDeleted: removeProjectFromList,
+          adminPermissions,
+          isSuperAdmin,
+          isAdminLoading,
+          adminError,
+          loadAdminCapabilities,
         }} />
       </div>
       {showChatAssistant ? (
@@ -238,6 +331,22 @@ function App() {
             <Route path="/projects" element={<Project />} />
             <Route path="/projects/:projectId" element={<ProjectDetails />} />
             <Route path="/account" element={<Account />} />
+            <Route path="/change-temporary-password" element={<TemporaryPasswordChange />} />
+            <Route path="/admin" element={<Suspense fallback={<AdminRouteLoading />}><AdminRoute /></Suspense>}>
+              <Route element={<Suspense fallback={<AdminRouteLoading />}><AdminLayout /></Suspense>}>
+                <Route index element={<Suspense fallback={<AdminRouteLoading />}><AdminOverview /></Suspense>} />
+                <Route path="users" element={<Suspense fallback={<AdminRouteLoading />}><AdminUsers /></Suspense>} />
+                <Route path="users/:userId" element={<Suspense fallback={<AdminRouteLoading />}><AdminUserDetails /></Suspense>} />
+                <Route path="roles" element={<Suspense fallback={<AdminRouteLoading />}><AdminRoles /></Suspense>} />
+                <Route path="roles/:roleId" element={<Suspense fallback={<AdminRouteLoading />}><AdminRoleDetails /></Suspense>} />
+                <Route path="projects" element={<Suspense fallback={<AdminRouteLoading />}><AdminProjects /></Suspense>} />
+                <Route path="tasks" element={<Suspense fallback={<AdminRouteLoading />}><AdminTasks /></Suspense>} />
+                <Route path="notifications" element={<Suspense fallback={<AdminRouteLoading />}><AdminNotifications /></Suspense>} />
+                <Route path="reports" element={<Suspense fallback={<AdminRouteLoading />}><AdminReports /></Suspense>} />
+                <Route path="audit" element={<Suspense fallback={<AdminRouteLoading />}><AdminAudit /></Suspense>} />
+                <Route path="system" element={<Suspense fallback={<AdminRouteLoading />}><AdminSystem /></Suspense>} />
+              </Route>
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>

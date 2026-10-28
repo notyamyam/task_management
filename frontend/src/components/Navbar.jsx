@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { CheckCircle2, ChevronDown, Circle, FolderKanban, LayoutDashboard, ListTodo, UserRoundCheck } from "lucide-react";
+import { CheckCircle2, ChevronDown, Circle, FolderKanban, LayoutDashboard, ListTodo, ShieldCheck, UserRoundCheck } from "lucide-react";
+
+import { hasAnyAdminPermission } from "./admin/adminPermissions";
 
 const TASK_FILTERS = [
   { value: "my", label: "My Tasks", icon: UserRoundCheck },
@@ -9,7 +11,7 @@ const TASK_FILTERS = [
   { value: "all", label: "All", icon: ListTodo },
 ];
 
-const Navbar = ({ filter, onFilterChange, projects = [] }) => {
+const Navbar = ({ filter, onFilterChange, projects = [], adminPermissions = [], isAdminLoading, adminError }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isTaskMenuOpen, setIsTaskMenuOpen] = useState(false);
@@ -150,6 +152,20 @@ const Navbar = ({ filter, onFilterChange, projects = [] }) => {
             </div>
           ) : null}
         </div>
+        {!isAdminLoading && !adminError && hasAnyAdminPermission(adminPermissions) ? (
+          <NavLink
+            to="/admin"
+            aria-label="Administration"
+            onClick={() => {
+              setIsTaskMenuOpen(false);
+              setIsProjectMenuOpen(false);
+            }}
+            className={({ isActive }) => `mt-1 flex min-h-11 items-center justify-center gap-2.5 rounded-lg text-sm font-semibold text-emerald-50 hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#dce993] sm:justify-start sm:px-3 ${isActive ? "bg-white/10" : ""}`}
+          >
+            <ShieldCheck aria-hidden="true" className="size-5 flex-none text-[#dce993]" />
+            <span className="hidden sm:inline">Administration</span>
+          </NavLink>
+        ) : null}
       </nav>
     </aside>
   );
