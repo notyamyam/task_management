@@ -117,8 +117,9 @@ def seed_demo_data(db):
                 )
             )
 
+    emails = [user.email for user in users]
     db.commit()
-    return users
+    return emails
 
 
 def main() -> int:
@@ -140,8 +141,8 @@ def main() -> int:
     )
     print(f"Password for every demo user: {DEMO_PASSWORD}")
     print("Demo users:")
-    for user in users:
-        print(f"  {user.email}")
+    for email in users:
+        print(f"  {email}")
     return 0
 
 
